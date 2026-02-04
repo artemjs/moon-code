@@ -1,0 +1,27 @@
+# Build artifacts
+zig-out/
+.zig-cache/
+
+# Downloaded dependencies
+libs/
+
+# IDE/Editor settings
+.claude/
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Debug files
+*.pdb
+*.dSYM/
+
+# Logs
+*.log
