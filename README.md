@@ -151,8 +151,8 @@ Settings are stored in `~/.mncode/`:
 - [ ] Global project search
 - [ ] Git integration
 - [x] LSP support (autocomplete, diagnostics)
-- [ ] Create/delete files from sidebar
-- [ ] File renaming
+- [x] Create/delete files from sidebar
+- [x] File renaming
 - [ ] Command Palette (Ctrl+Shift+P)
 - [ ] Themes (light)
 
