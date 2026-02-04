@@ -50,7 +50,7 @@ A minimalist code editor in Zig with native Wayland rendering.
 ## Build
 
 ```bash
-# Requires Zig 0.13+
+# Requires Zig 0.15.2+
 zig build
 
 # Run
