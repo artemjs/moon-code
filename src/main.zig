@@ -27,6 +27,14 @@ const shell = @import("terminal/shell.zig");
 const lsp = @import("lsp/client.zig");
 const LazyLoader = @import("editor/lazy_loader.zig").LazyLoader;
 
+// New modular components
+const logger = @import("core/logger.zig");
+const errors = @import("core/errors.zig");
+const UIState = @import("ui/state.zig").UIState;
+const SearchState = @import("ui/state.zig").SearchState;
+const TabManager = @import("editor/tab_manager.zig").TabManager;
+const BufferCache = @import("editor/cache.zig").BufferCache;
+
 // Embedded fonts (compiled into binary)
 const EMBEDDED_FONT = @embedFile("assets/fonts/DejaVuSansMono.ttf");
 const EMBEDDED_UI_FONT = @embedFile("assets/fonts/Ubuntu-Light.ttf");
@@ -1232,6 +1240,9 @@ pub fn main() !void {
 
     // Load settings from ~/.mncode
     loadSettings();
+
+    // Initialize logger
+    logger.initDefault();
 
     // Plugins are loaded later (after GPU initialization)
 
@@ -4196,13 +4207,13 @@ pub fn main() !void {
             var t1 = std.time.milliTimestamp();
             _ = text_buffer.getTextCached();
             var t2 = std.time.milliTimestamp();
-            if (t2 - t1 > 10) std.debug.print("[RENDER] getTextCached: {}ms\n", .{t2 - t1});
+            if (t2 - t1 > 10) logger.debug("[RENDER] getTextCached: {}ms\n", .{t2 - t1});
 
             // Build line index for O(1) line offset lookup
             t1 = std.time.milliTimestamp();
             buildLineIndex(&text_buffer);
             t2 = std.time.milliTimestamp();
-            if (t2 - t1 > 10) std.debug.print("[RENDER] buildLineIndex: {}ms\n", .{t2 - t1});
+            if (t2 - t1 > 10) logger.debug("[RENDER] buildLineIndex: {}ms\n", .{t2 - t1});
             // Pre-cache cursor position (expensive calculation done once per frame)
             updateCursorCache(&text_buffer);
 
@@ -4210,7 +4221,7 @@ pub fn main() !void {
             t1 = std.time.milliTimestamp();
             render(&gpu, &text_buffer, &wayland, &selection, scroll_x, scroll_y, sidebar_visible, sidebar_width, sidebar_active_tab, sidebar_tab_hovered, open_folder_btn_hovered, sidebar_resize_hovered, menu_hover, menu_open, menu_item_hover, settings_visible, settings_active_tab, settings_tab_hovered, settings_checkbox_hovered, &folder_files, &folder_file_lens, folder_file_count, &folder_is_dir, &folder_expanded, &folder_anim_progress, &folder_indent, explorer_selected, explorer_hovered, explorer_scroll, current_folder_len, &tab_names, &tab_name_lens, &tab_modified, tab_count, active_tab, tab_hovered, tab_close_hovered, &tab_paths, &tab_path_lens, &tab_is_plugin, &tab_plugin_idx, plugin_hovered, search_visible, search_field.getText(), search_field.cursor, search_match_count, search_current_match, &search_matches, editor_focused);
             t2 = std.time.milliTimestamp();
-            if (t2 - t1 > 16) std.debug.print("[RENDER] render(): {}ms\n", .{t2 - t1});
+            if (t2 - t1 > 16) logger.debug("[RENDER] render(): {}ms\n", .{t2 - t1});
             gpu.endFrame();
 
             // Tell Wayland which regions changed (damage reporting)
@@ -5049,7 +5060,7 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
 
     const lines_end = std.time.milliTimestamp();
     if (lines_end - lines_start > 10) {
-        std.debug.print("[RENDER] Lines: {}ms total, copy={}ms, {} lines\n", .{lines_end - lines_start, total_copy_time, lines_drawn});
+        logger.debug("[RENDER] Lines: {}ms total, copy={}ms, {} lines\n", .{lines_end - lines_start, total_copy_time, lines_drawn});
     }
 
     // For scrollbars use cached value
@@ -7042,12 +7053,12 @@ fn loadFile(path: []const u8, buffer: *GapBuffer) void {
 
     // Use memory-mapped file loading (instant for any file size)
     if (!buffer.loadFileMmap(path)) {
-        std.debug.print("[LOAD] mmap failed, using lazy loader\n", .{});
+        logger.info("[LOAD] mmap failed, using lazy loader\n", .{});
         _ = g_lazy_loader.startLoad(path, buffer);
     }
 
     const elapsed = std.time.milliTimestamp() - start;
-    std.debug.print("[LOAD] File loaded in {}ms, size={}, lines={}\n", .{elapsed, buffer.len(), buffer.getLineCount()});
+    logger.info("[LOAD] File loaded in {}ms, size={}, lines={}\n", .{elapsed, buffer.len(), buffer.getLineCount()});
 }
 
 // ============================================================================

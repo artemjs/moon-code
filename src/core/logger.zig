@@ -53,13 +53,12 @@ pub const Logger = struct {
         var path_buf: [512]u8 = undefined;
         const home = std.posix.getenv("HOME") orelse return Self{};
 
-        const path_len = std.fmt.bufPrint(&path_buf, "{s}/.mncode/moon-code.log", .{home}) catch return Self{};
-        const path = path_buf[0..path_len];
+        const path = std.fmt.bufPrint(&path_buf, "{s}/.mncode/moon-code.log", .{home}) catch return Self{};
 
         // Ensure directory exists
         var dir_buf: [512]u8 = undefined;
-        const dir_len = std.fmt.bufPrint(&dir_buf, "{s}/.mncode", .{home}) catch return Self{};
-        std.fs.makeDirAbsolute(dir_buf[0..dir_len]) catch {};
+        const dir = std.fmt.bufPrint(&dir_buf, "{s}/.mncode", .{home}) catch return Self{};
+        std.fs.makeDirAbsolute(dir) catch {};
 
         return Self.init(.{
             .level = .info,
