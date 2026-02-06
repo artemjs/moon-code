@@ -684,7 +684,7 @@ fn ensureConfigDir() void {
     const dir_path = getConfigDir(&dir_buf) orelse return;
 
     // Create directory if it doesn't exist (ignore if already exists)
-    std.fs.makeDirAbsolute(dir_path) catch {};
+    std.fs.makeDirAbsolute(dir_path) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 fn saveSettings() void {
@@ -699,12 +699,12 @@ fn saveSettings() void {
 
     // Write settings
     const inertia_data = if (g_scroll_inertia) "scroll_inertia=1\n" else "scroll_inertia=0\n";
-    file.writeAll(inertia_data) catch {};
+    file.writeAll(inertia_data) catch |e| logger.warn("Operation failed: {}", .{e});
 
     // Scroll speed
     var speed_buf: [32]u8 = undefined;
     const speed_str = std.fmt.bufPrint(&speed_buf, "scroll_speed={d:.2}\n", .{g_scroll_speed}) catch return;
-    file.writeAll(speed_str) catch {};
+    file.writeAll(speed_str) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 fn loadSettings() void {
@@ -1438,7 +1438,7 @@ pub fn main() !void {
         }};
 
         const timeout: i32 = if (key_repeat.held_key != null or animation_active or selection.dragging or g_lazy_loader.isPartial()) 16 else -1; // 60fps for animation, drag selection, and lazy loading
-        _ = std.posix.poll(&fds, timeout) catch {};
+        _ = std.posix.poll(&fds, timeout) catch |e| logger.warn("Operation failed: {}", .{e});
 
         if ((fds[0].revents & std.posix.POLL.IN) != 0) {
             _ = c.wl_display_read_events(wayland.display);
@@ -2137,10 +2137,10 @@ pub fn main() !void {
                                 // Perform the pending plugin action
                                 switch (g_pending_plugin_action) {
                                     .disable => {
-                                        plugins.disablePlugin(g_pending_plugin_path[0..g_pending_plugin_path_len]) catch {};
+                                        plugins.disablePlugin(g_pending_plugin_path[0..g_pending_plugin_path_len]) catch |e| logger.warn("Operation failed: {}", .{e});
                                     },
                                     .uninstall => {
-                                        plugins.uninstallPlugin(g_pending_plugin_path[0..g_pending_plugin_path_len]) catch {};
+                                        plugins.uninstallPlugin(g_pending_plugin_path[0..g_pending_plugin_path_len]) catch |e| logger.warn("Operation failed: {}", .{e});
                                         // Close the plugin tab
                                         if (tab_count > 1 and g_pending_plugin_tab < tab_count) {
                                             var close_i = g_pending_plugin_tab;
@@ -2421,9 +2421,9 @@ pub fn main() !void {
                                     }
                                     var paste_buf: [64 * 1024]u8 = undefined;
                                     if (wayland.pasteFromClipboard(&paste_buf)) |data| {
-                                        text_buffer.insertSlice(data) catch {};
+                                        text_buffer.insertSlice(data) catch |e| logger.warn("Operation failed: {}", .{e});
                                     } else if (clipboard_len > 0) {
-                                        text_buffer.insertSlice(clipboard_buffer[0..clipboard_len]) catch {};
+                                        text_buffer.insertSlice(clipboard_buffer[0..clipboard_len]) catch |e| logger.warn("Operation failed: {}", .{e});
                                     }
                                 } else if (item_idx == 5) {
                                     // Search
@@ -2907,7 +2907,7 @@ pub fn main() !void {
                                     const dp_idx: usize = @intCast(clicked_disabled_idx);
                                     const dp = &disabled_plugins[dp_idx];
                                     // Enable the plugin
-                                    plugins.enablePlugin(dp.getPath()) catch {};
+                                    plugins.enablePlugin(dp.getPath()) catch |e| logger.warn("Operation failed: {}", .{e});
                                     needs_redraw = true;
                                 }
                             }
@@ -3177,7 +3177,7 @@ pub fn main() !void {
                                             // Start shell if not running
                                             const term = shell.getShell();
                                             if (!term.isRunning()) {
-                                                term.start() catch {};
+                                                term.start() catch |e| logger.warn("Operation failed: {}", .{e});
                                             }
                                             needs_redraw = true;
                                         }
@@ -3237,7 +3237,7 @@ pub fn main() !void {
 
                                         if (is_disabled) {
                                             // Enable without confirmation
-                                            plugins.enablePlugin(plugin_path_click[0..path_len_click]) catch {};
+                                            plugins.enablePlugin(plugin_path_click[0..path_len_click]) catch |e| logger.warn("Operation failed: {}", .{e});
                                         } else {
                                             // Show confirm dialog for disable
                                             g_pending_plugin_action = .disable;
@@ -3391,7 +3391,7 @@ pub fn main() !void {
                             // Delete word before cursor (simple approach)
                             // Just insert the text for now
                             for (insert_text) |ch| {
-                                text_buffer.insert(ch) catch {};
+                                text_buffer.insert(ch) catch |e| logger.warn("Operation failed: {}", .{e});
                             }
                             invalidateCursorCache();
                             invalidateLineIndex();
@@ -3599,7 +3599,7 @@ pub fn main() !void {
                             undo_count -= 1;
                             text_buffer.clear();
                             const undo_len = undo_lens[undo_count];
-                            text_buffer.insertSlice(undo_stack[undo_count][0..undo_len]) catch {};
+                            text_buffer.insertSlice(undo_stack[undo_count][0..undo_len]) catch |e| logger.warn("Operation failed: {}", .{e});
                             text_buffer.moveCursor(undo_cursors[undo_count]);
                             // Check if matches original
                             const matches_original = (undo_len == tab_original_lens[active_tab]) and
@@ -3628,7 +3628,7 @@ pub fn main() !void {
                             redo_count -= 1;
                             text_buffer.clear();
                             const redo_len = redo_lens[redo_count];
-                            text_buffer.insertSlice(redo_stack[redo_count][0..redo_len]) catch {};
+                            text_buffer.insertSlice(redo_stack[redo_count][0..redo_len]) catch |e| logger.warn("Operation failed: {}", .{e});
                             text_buffer.moveCursor(redo_cursors[redo_count]);
                             // Check if matches original
                             const matches_original = (redo_len == tab_original_lens[active_tab]) and
@@ -3729,7 +3729,7 @@ pub fn main() !void {
                     // Ctrl+Shift+= - Text Zoom In
                     if (event.key == wl.KEY_EQUAL and wayland.shift_held) {
                         text_zoom = @min(TEXT_ZOOM_MAX, text_zoom + TEXT_ZOOM_STEP);
-                        gpu.setTextZoom(text_zoom) catch {};
+                        gpu.setTextZoom(text_zoom) catch |e| logger.warn("Operation failed: {}", .{e});
                         needs_redraw = true;
                         continue;
                     }
@@ -3737,7 +3737,7 @@ pub fn main() !void {
                     // Ctrl+Shift+- - Text Zoom Out
                     if (event.key == wl.KEY_MINUS and wayland.shift_held) {
                         text_zoom = @max(TEXT_ZOOM_MIN, text_zoom - TEXT_ZOOM_STEP);
-                        gpu.setTextZoom(text_zoom) catch {};
+                        gpu.setTextZoom(text_zoom) catch |e| logger.warn("Operation failed: {}", .{e});
                         needs_redraw = true;
                         continue;
                     }
@@ -3745,7 +3745,7 @@ pub fn main() !void {
                     // Ctrl+Shift+0 - Reset Text Zoom to 100%
                     if (event.key == wl.KEY_0 and wayland.shift_held) {
                         text_zoom = 1.0;
-                        gpu.setTextZoom(text_zoom) catch {};
+                        gpu.setTextZoom(text_zoom) catch |e| logger.warn("Operation failed: {}", .{e});
                         needs_redraw = true;
                         continue;
                     }
@@ -3783,7 +3783,7 @@ pub fn main() !void {
                             g_terminal_field.clear();
                         } else if (!term.isRunning()) {
                             // Start shell on Enter
-                            term.start() catch {};
+                            term.start() catch |e| logger.warn("Operation failed: {}", .{e});
                         }
                         needs_redraw = true;
                     } else if (event.key == wl.KEY_ESC) {
@@ -3921,7 +3921,7 @@ pub fn main() !void {
                                 }
                                 // Insert the text from plugin
                                 for (insert_text) |ch| {
-                                    text_buffer.insert(ch) catch {};
+                                    text_buffer.insert(ch) catch |e| logger.warn("Operation failed: {}", .{e});
                                 }
                                 handled_specially = true;
                             }
@@ -3946,16 +3946,16 @@ pub fn main() !void {
                             const extra_indent = shouldAddExtraIndent(&text_buffer, file_type);
 
                             // Insert newline + indent
-                            text_buffer.insert('\n') catch {};
+                            text_buffer.insert('\n') catch |e| logger.warn("Operation failed: {}", .{e});
                             for (indent) |indent_ch| {
-                                text_buffer.insert(indent_ch) catch {};
+                                text_buffer.insert(indent_ch) catch |e| logger.warn("Operation failed: {}", .{e});
                             }
                             if (extra_indent) {
                                 // Add 4 spaces
-                                text_buffer.insert(' ') catch {};
-                                text_buffer.insert(' ') catch {};
-                                text_buffer.insert(' ') catch {};
-                                text_buffer.insert(' ') catch {};
+                                text_buffer.insert(' ') catch |e| logger.warn("Operation failed: {}", .{e});
+                                text_buffer.insert(' ') catch |e| logger.warn("Operation failed: {}", .{e});
+                                text_buffer.insert(' ') catch |e| logger.warn("Operation failed: {}", .{e});
+                                text_buffer.insert(' ') catch |e| logger.warn("Operation failed: {}", .{e});
                             }
                             handled_specially = true;
                         }
@@ -3985,8 +3985,8 @@ pub fn main() !void {
                                         selection.clear();
                                     }
                                     // Insert opening and closing bracket/quote
-                                    text_buffer.insert(ch) catch {};
-                                    text_buffer.insert(close_ch) catch {};
+                                    text_buffer.insert(ch) catch |e| logger.warn("Operation failed: {}", .{e});
+                                    text_buffer.insert(close_ch) catch |e| logger.warn("Operation failed: {}", .{e});
                                     // Cursor between brackets
                                     const cur = text_buffer.cursor();
                                     if (cur > 0) text_buffer.moveCursor(cur - 1);
@@ -4019,7 +4019,7 @@ pub fn main() !void {
 
                                 // Then insert new text
                                 for (result.insert_text) |ch| {
-                                    text_buffer.insert(ch) catch {};
+                                    text_buffer.insert(ch) catch |e| logger.warn("Operation failed: {}", .{e});
                                 }
 
                                 // Move cursor back to original position
@@ -4346,10 +4346,10 @@ fn handleKeyAction(key: u32, char: ?u8, text_buffer: *GapBuffer, wayland: *Wayla
         // Try to paste from system clipboard
         var paste_buf: [64 * 1024]u8 = undefined;
         if (wayland.pasteFromClipboard(&paste_buf)) |data| {
-            text_buffer.insertSlice(data) catch {};
+            text_buffer.insertSlice(data) catch |e| logger.warn("Operation failed: {}", .{e});
         } else if (clipboard_len > 0) {
             // Fallback to internal buffer
-            text_buffer.insertSlice(clipboard_buffer[0..clipboard_len]) catch {};
+            text_buffer.insertSlice(clipboard_buffer[0..clipboard_len]) catch |e| logger.warn("Operation failed: {}", .{e});
         }
         return;
     }
@@ -4426,7 +4426,7 @@ fn handleKeyAction(key: u32, char: ?u8, text_buffer: *GapBuffer, wayland: *Wayla
             deleteRange(text_buffer, range.start, range.end);
             selection.clear();
         }
-        text_buffer.insert(ch) catch {};
+        text_buffer.insert(ch) catch |e| logger.warn("Operation failed: {}", .{e});
     }
 }
 
@@ -7102,7 +7102,7 @@ fn lspDidOpen(file_path: []const u8, buffer: *GapBuffer) void {
     var content_buf: [65536]u8 = undefined;
     const content_len = buffer.copyTo(&content_buf);
 
-    lsp.getClient().didOpen(g_lsp_conn_id, uri, lang_id, content_buf[0..content_len]) catch {};
+    lsp.getClient().didOpen(g_lsp_conn_id, uri, lang_id, content_buf[0..content_len]) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 /// Notify LSP that file content changed
@@ -7118,7 +7118,7 @@ fn lspDidChange(file_path: []const u8, buffer: *GapBuffer) void {
     const content_len = buffer.copyTo(&content_buf);
 
     g_lsp_file_version += 1;
-    lsp.getClient().didChange(g_lsp_conn_id, uri, g_lsp_file_version, content_buf[0..content_len]) catch {};
+    lsp.getClient().didChange(g_lsp_conn_id, uri, g_lsp_file_version, content_buf[0..content_len]) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 /// Request completion at cursor position
@@ -7128,7 +7128,7 @@ fn lspRequestCompletion(file_path: []const u8, line: u32, col: u32) void {
     var uri_buf: [600]u8 = undefined;
     const uri = std.fmt.bufPrint(&uri_buf, "file://{s}", .{file_path}) catch return;
 
-    _ = lsp.getClient().requestCompletion(g_lsp_conn_id, uri, line, col) catch {};
+    _ = lsp.getClient().requestCompletion(g_lsp_conn_id, uri, line, col) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 /// Request hover info at cursor position
@@ -7138,7 +7138,7 @@ fn lspRequestHover(file_path: []const u8, line: u32, col: u32) void {
     var uri_buf: [600]u8 = undefined;
     const uri = std.fmt.bufPrint(&uri_buf, "file://{s}", .{file_path}) catch return;
 
-    _ = lsp.getClient().requestHover(g_lsp_conn_id, uri, line, col) catch {};
+    _ = lsp.getClient().requestHover(g_lsp_conn_id, uri, line, col) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 /// Request go to definition
@@ -7148,7 +7148,7 @@ fn lspRequestDefinition(file_path: []const u8, line: u32, col: u32) void {
     var uri_buf: [600]u8 = undefined;
     const uri = std.fmt.bufPrint(&uri_buf, "file://{s}", .{file_path}) catch return;
 
-    _ = lsp.getClient().requestDefinition(g_lsp_conn_id, uri, line, col) catch {};
+    _ = lsp.getClient().requestDefinition(g_lsp_conn_id, uri, line, col) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 /// Poll LSP for messages
