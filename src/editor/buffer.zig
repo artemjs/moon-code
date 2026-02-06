@@ -639,13 +639,41 @@ pub const GapBuffer = struct {
     }
 
     /// Fast O(1) line offset lookup using pre-built line_starts index
+    /// Falls back to O(n) scan if line_starts is stale
     pub fn getLineOffsetFast(self: *const Self, target_line: usize) usize {
         if (target_line == 0) return 0;
         if (target_line < self.line_starts.items.len) {
             return self.line_starts.items[target_line];
         }
-        // Fallback to end of buffer if line doesn't exist
-        return self.cached_len;
+        // line_starts is stale (editing without reload) - scan text
+        // This is O(n) but necessary for in-memory editing
+        var current_line: usize = 0;
+        var offset: usize = 0;
+        const total = self.cached_len;
+
+        while (offset < total and current_line < target_line) {
+            // Get character at offset by scanning pieces
+            var piece_offset: usize = 0;
+            for (self.pieces.items) |piece| {
+                if (offset < piece_offset + piece.length) {
+                    const idx = piece.start + (offset - piece_offset);
+                    const ch = switch (piece.source) {
+                        .original => if (idx < self.original.len) self.original[idx] else 0,
+                        .add => if (idx < self.add_buffer.items.len) self.add_buffer.items[idx] else 0,
+                    };
+                    if (ch == '\n') {
+                        current_line += 1;
+                        if (current_line == target_line) {
+                            return offset + 1;
+                        }
+                    }
+                    break;
+                }
+                piece_offset += piece.length;
+            }
+            offset += 1;
+        }
+        return offset;
     }
 
     /// Get total line count (O(1))

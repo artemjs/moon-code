@@ -195,7 +195,7 @@ fn invalidateCursorCache() void {
 
 /// Sync line index count from buffer (O(1) - just reads count)
 fn buildLineIndex(text_buffer: *GapBuffer) void {
-    g_line_index_count = text_buffer.getLineCount();
+    g_line_index_count = text_buffer.lineCount();
     g_line_index_buf_len = text_buffer.len();
     g_line_index_valid = true;
 }
@@ -383,6 +383,8 @@ const Slider = struct {
 
 // Global sliders for settings
 var g_scroll_speed_slider: Slider = Slider.init(0.1, 10.0, 1.0, false);
+var g_line_visibility_slider: Slider = Slider.init(0.0, 1.0, 0.0, true); // 0 = no lines, 1 = full lines
+var g_line_visibility: f32 = 0.0; // Line separator visibility (0-1)
 
 // Tab Bar Height (resizable)
 var g_tab_bar_height: i32 = 40; // Minimum 30, maximum 80
@@ -705,6 +707,11 @@ fn saveSettings() void {
     var speed_buf: [32]u8 = undefined;
     const speed_str = std.fmt.bufPrint(&speed_buf, "scroll_speed={d:.2}\n", .{g_scroll_speed}) catch return;
     file.writeAll(speed_str) catch |e| logger.warn("Operation failed: {}", .{e});
+
+    // Line visibility
+    var line_vis_buf: [32]u8 = undefined;
+    const line_vis_str = std.fmt.bufPrint(&line_vis_buf, "line_visibility={d:.2}\n", .{g_line_visibility}) catch return;
+    file.writeAll(line_vis_str) catch |e| logger.warn("Operation failed: {}", .{e});
 }
 
 fn loadSettings() void {
@@ -735,6 +742,19 @@ fn loadSettings() void {
             g_scroll_speed = std.fmt.parseFloat(f32, value_str) catch 1.0;
             g_scroll_speed = @max(0.1, @min(10.0, g_scroll_speed));
             g_scroll_speed_slider.value = g_scroll_speed;
+        }
+    }
+
+    // Parse line_visibility
+    if (std.mem.indexOf(u8, content, "line_visibility=")) |start| {
+        const value_start = start + "line_visibility=".len;
+        var end = value_start;
+        while (end < content.len and content[end] != '\n' and content[end] != '\r') : (end += 1) {}
+        if (end > value_start) {
+            const value_str = content[value_start..end];
+            g_line_visibility = std.fmt.parseFloat(f32, value_str) catch 0.0;
+            g_line_visibility = @max(0.0, @min(1.0, g_line_visibility));
+            g_line_visibility_slider.value = g_line_visibility;
         }
     }
 }
@@ -1410,7 +1430,7 @@ pub fn main() !void {
             // Load ALL remaining content without redrawing (fast bulk load)
             while (g_lazy_loader.continueLoad(&text_buffer)) {}
             // Now that loading is complete, sync and redraw once
-            g_line_index_count = text_buffer.getLineCount();
+            g_line_index_count = text_buffer.lineCount();
             invalidateLineIndex();
             needs_redraw = true;
         }
@@ -1871,6 +1891,8 @@ pub fn main() !void {
                             new_tab_hover = 0; // About
                         } else if (mx >= popup_x + 90 and mx < popup_x + 180) {
                             new_tab_hover = 1; // Additional
+                        } else if (mx >= popup_x + 188 and mx < popup_x + 238) {
+                            new_tab_hover = 2; // UI
                         }
                     }
 
@@ -1902,6 +1924,27 @@ pub fn main() !void {
                             needs_redraw = true;
                         }
                     }
+
+                    // UI tab slider
+                    if (ui.settings_active_tab == 2) {
+                        const content_y = popup_y + 100;
+                        const slider_track_y = content_y + 44;
+                        const slider_x = popup_x + 16;
+                        const slider_w: i32 = @as(i32, @intCast(popup_w)) - 80;
+                        g_line_visibility_slider.x = slider_x;
+                        g_line_visibility_slider.y = slider_track_y;
+                        g_line_visibility_slider.width = slider_w;
+                        g_line_visibility_slider.height = 20;
+
+                        const slider_changed = g_line_visibility_slider.update(mx, my, wayland.mouse_pressed);
+                        if (slider_changed) {
+                            g_line_visibility = g_line_visibility_slider.value;
+                            needs_redraw = true;
+                        }
+                        if (g_line_visibility_slider.is_hovered or g_line_visibility_slider.is_dragging) {
+                            needs_redraw = true;
+                        }
+                    }
                 }
 
                 // Close button hover
@@ -1918,7 +1961,7 @@ pub fn main() !void {
                 }
 
                 // Set cursor
-                if (new_tab_hover >= 0 or new_checkbox_hover or new_close_hover or g_scroll_speed_slider.is_hovered or g_scroll_speed_slider.is_dragging) {
+                if (new_tab_hover >= 0 or new_checkbox_hover or new_close_hover or g_scroll_speed_slider.is_hovered or g_scroll_speed_slider.is_dragging or g_line_visibility_slider.is_hovered or g_line_visibility_slider.is_dragging) {
                     wayland.setCursor(.pointer);
                 } else {
                     wayland.setCursor(.default);
@@ -2253,6 +2296,11 @@ pub fn main() !void {
                                 ui.settings_active_tab = 1;
                                 needs_redraw = true;
                             }
+                            // UI tab
+                            else if (event.x >= popup_x + 188 and event.x < popup_x + 238) {
+                                ui.settings_active_tab = 2;
+                                needs_redraw = true;
+                            }
                         }
 
                         // Checkbox clicks (only in Additional tab)
@@ -2274,6 +2322,15 @@ pub fn main() !void {
                             // Slider click - start drag
                             if (g_scroll_speed_slider.update(event.x, event.y, true)) {
                                 g_scroll_speed = g_scroll_speed_slider.value;
+                                saveSettings();
+                                needs_redraw = true;
+                            }
+                        }
+
+                        // UI tab slider
+                        if (ui.settings_active_tab == 2) {
+                            if (g_line_visibility_slider.update(event.x, event.y, true)) {
+                                g_line_visibility = g_line_visibility_slider.value;
                                 saveSettings();
                                 needs_redraw = true;
                             }
@@ -2331,6 +2388,7 @@ pub fn main() !void {
                                         @memcpy(tab_names[tab_count][0..new_name.len], new_name);
                                         tab_name_lens[tab_count] = new_name.len;
                                         tab_path_lens[tab_count] = 0;
+                                        tab_is_plugin[tab_count] = false;
                                         tab_modified[tab_count] = false;
                                         tab_scroll_x[tab_count] = 0;
                                         tab_scroll_y[tab_count] = 0;
@@ -3008,6 +3066,7 @@ pub fn main() !void {
                                     @memcpy(tab_names[tab_count][0..new_name.len], new_name);
                                     tab_name_lens[tab_count] = new_name.len;
                                     tab_path_lens[tab_count] = 0;
+                                    tab_is_plugin[tab_count] = false;
                                     tab_modified[tab_count] = false;
                                     tab_scroll_x[tab_count] = 0;
                                     tab_scroll_y[tab_count] = 0;
@@ -3321,6 +3380,10 @@ pub fn main() !void {
                         g_scroll_speed_slider.is_dragging = false;
                         saveSettings();
                     }
+                    if (g_line_visibility_slider.is_dragging) {
+                        g_line_visibility_slider.is_dragging = false;
+                        saveSettings();
+                    }
                 }
             }
         }
@@ -3534,6 +3597,7 @@ pub fn main() !void {
                             @memcpy(tab_names[active_tab][0..new_name.len], new_name);
                             tab_name_lens[active_tab] = new_name.len;
                             tab_path_lens[active_tab] = 0;
+                            tab_is_plugin[active_tab] = false;
                             tab_modified[active_tab] = false;
                             tab_scroll_x[active_tab] = 0;
                             tab_scroll_y[active_tab] = 0;
@@ -3881,12 +3945,10 @@ pub fn main() !void {
                     const file_type: FileType = if (tab_path_lens[active_tab] > 0)
                         detectFileType(tab_paths[active_tab][0..tab_path_lens[active_tab]])
                     else
-                        .unknown;
+                        .zig; // Default to zig for new unsaved files
 
-                    // Enable smart editing for all programming languages
-                    const is_code_file = file_type == .zig or file_type == .python or
-                        file_type == .c or file_type == .cpp or
-                        file_type == .javascript or file_type == .json;
+                    // Enable smart editing for all files
+                    const is_code_file = true;
                     var handled_specially = false;
 
                     // Check if we have a plugin for this file with on_char/on_enter support
@@ -4275,14 +4337,14 @@ fn screenToTextPos(gpu: *const GpuRenderer, text_buffer: *const GapBuffer, x: i3
 
     const buf_len = text_buffer.len();
 
-    // O(1) jump to target line via index
-    if (!g_line_index_valid or click_line >= g_line_index_count) {
-        // Index unavailable or line out of bounds - return end
+    // Get line count for bounds check
+    const line_count = text_buffer.lineCount();
+    if (click_line >= line_count) {
         return buf_len;
     }
 
-    // Get line start in O(1)
-    var pos = g_line_index[click_line];
+    // Get line start in O(1) using buffer's fast lookup
+    var pos = text_buffer.getLineOffsetFast(click_line);
 
     // Find position in line (only within one line - fast)
     // Use text_cache directly if available
@@ -4778,7 +4840,7 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
     const buf_len = text_buffer.len();
     if (buf_len != g_cached_buf_len) {
         g_cached_buf_len = buf_len;
-        g_cached_line_count = text_buffer.getLineCount();
+        g_cached_line_count = text_buffer.lineCount();
         // Don't recalculate max line length every frame - too expensive
         // g_cached_max_line_len = text_buffer.maxLineLengthConst();
     }
@@ -5024,6 +5086,17 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
             if (current_line == cursor_pos.line and editor_focused) {
                 const cursor_x = code_start_x + @as(i32, @intCast(cursor_pos.col)) * char_width;
                 gpu.fillRoundedRect(cursor_x, y, 2, @intCast(line_height), 1, COLOR_CURSOR);
+            }
+
+            // Line separator (if visibility > 0)
+            if (g_line_visibility > 0.01) {
+                const line_sep_y = y + line_height - 1;
+                const line_sep_x = code_start_x;
+                const line_sep_w: u32 = @intCast(@max(1, editor_right - line_sep_x - 8));
+                // Alpha based on visibility (0-255)
+                const alpha: u32 = @intFromFloat(g_line_visibility * 40); // max 40 alpha for subtle effect
+                const line_color: u32 = (alpha << 24) | 0x808080; // Gray with variable alpha
+                gpu.fillRect(line_sep_x, line_sep_y, line_sep_w, 1, line_color);
             }
         }
 
@@ -6189,6 +6262,14 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
         gpu.fillRoundedRect(popup_x + 90, tab_y, 90, 28, 6, additional_tab_color);
         gpu.drawUIText("Additional", popup_x + 100, tab_y + 7, if (settings_active_tab == 1 or settings_tab_hovered == 1) COLOR_ACCENT else COLOR_TEXT_DIM);
 
+        // UI tab
+        if (settings_tab_hovered == 2 and settings_active_tab != 2) {
+            gpu.drawGlow(popup_x + 188, tab_y, 50, 28, 6, 0xFFd0a080, 10);
+        }
+        const ui_tab_color: u32 = if (settings_active_tab == 2) COLOR_ACCENT_DIM else if (settings_tab_hovered == 2) COLOR_BTN_HOVER else COLOR_BG;
+        gpu.fillRoundedRect(popup_x + 188, tab_y, 50, 28, 6, ui_tab_color);
+        gpu.drawUIText("UI", popup_x + 202, tab_y + 7, if (settings_active_tab == 2 or settings_tab_hovered == 2) COLOR_ACCENT else COLOR_TEXT_DIM);
+
         const content_y = popup_y + 100;
 
         if (settings_active_tab == 0) {
@@ -6261,6 +6342,41 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
             g_scroll_speed_slider.y = slider_track_y;
             g_scroll_speed_slider.width = slider_w;
             g_scroll_speed_slider.height = 20;
+        } else if (settings_active_tab == 2) {
+            // UI content - Line Visibility slider
+            gpu.drawUIText("Line Separators", popup_x + 16, content_y, COLOR_TEXT);
+            gpu.drawUIText("Visibility of line separators between rows", popup_x + 16, content_y + 20, COLOR_TEXT_DIM);
+
+            // Render slider
+            const slider_track_y = content_y + 44;
+            const slider_x = popup_x + 16;
+            const slider_w: i32 = @as(i32, @intCast(popup_w)) - 80;
+
+            // Background track
+            gpu.fillRoundedRect(slider_x, slider_track_y + 6, @intCast(slider_w), 8, 4, 0xFF2a2a2a);
+
+            // Filled part
+            const normalized = g_line_visibility_slider.value; // Already 0-1
+            const filled_w: u32 = @intFromFloat(@as(f32, @floatFromInt(slider_w)) * normalized);
+            if (filled_w > 4) {
+                gpu.fillRoundedRect(slider_x, slider_track_y + 6, filled_w, 8, 4, COLOR_ACCENT_DIM);
+            }
+
+            // Slider handle
+            const handle_x: i32 = slider_x + @as(i32, @intFromFloat(@as(f32, @floatFromInt(slider_w - 16)) * normalized));
+            const handle_color: u32 = if (g_line_visibility_slider.is_dragging) COLOR_ACCENT else if (g_line_visibility_slider.is_hovered) 0xFFdddddd else 0xFFaaaaaa;
+            gpu.fillRoundedRect(handle_x, slider_track_y, 16, 20, 4, handle_color);
+
+            // Value on the right (0% - 100%)
+            var vis_buf: [16]u8 = undefined;
+            const vis_str = std.fmt.bufPrint(&vis_buf, "{d:.0}%", .{g_line_visibility_slider.value * 100}) catch "?";
+            gpu.drawUIText(vis_str, slider_x + slider_w + 10, slider_track_y + 2, COLOR_TEXT);
+
+            // Update slider position for event handling
+            g_line_visibility_slider.x = slider_x;
+            g_line_visibility_slider.y = slider_track_y;
+            g_line_visibility_slider.width = slider_w;
+            g_line_visibility_slider.height = 20;
         }
     }
 
@@ -7032,7 +7148,7 @@ fn loadFile(path: []const u8, buffer: *GapBuffer) void {
     }
 
     const elapsed = std.time.milliTimestamp() - start;
-    logger.info("[LOAD] File loaded in {}ms, size={}, lines={}\n", .{elapsed, buffer.len(), buffer.getLineCount()});
+    logger.info("[LOAD] File loaded in {}ms, size={}, lines={}\n", .{elapsed, buffer.len(), buffer.lineCount()});
 }
 
 // ============================================================================
