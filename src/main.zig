@@ -1308,34 +1308,8 @@ pub fn main() !void {
     const TEXT_ZOOM_MAX: f32 = 3.0;  // 300%
     const TEXT_ZOOM_STEP: f32 = 0.1; // 10% step
 
-    // Scrollbar drag state
-    var dragging_vbar = false;
-    var dragging_hbar = false;
-    var drag_start_scroll: i32 = 0;
-    var drag_start_mouse: i32 = 0;
-
-    // UI State
-    var sidebar_visible = true;
-    var sidebar_width: i32 = 200; // Adjustable sidebar width
-    var dragging_sidebar = false;
-    var sidebar_active_tab: usize = 0; // 0 = Explorer, 1 = Search, 2 = Git
-    var sidebar_tab_hovered: i32 = -1;
-    var open_folder_btn_hovered: bool = false;
-    var sidebar_resize_hovered: bool = false;
-    var menu_open: i32 = -1; // -1 = closed, 0 = File, 1 = Edit, 2 = View
-    var menu_hover: i32 = -1;
-    var menu_item_hover: i32 = -1;
-    var settings_visible = false;
-    var settings_active_tab: u8 = 0; // 0 = About, 1 = Additional
-    var settings_tab_hovered: i8 = -1; // -1 = none, 0 = About, 1 = Additional
-    var settings_checkbox_hovered: bool = false;
-    var settings_close_hovered: bool = false;
-    var scroll_velocity_y: f32 = 0; // Inertia velocity
-
-    // === Bottom Panel State (local drag state only) ===
-    var dragging_bottom_panel: bool = false;
-    var dragging_tab_bar: bool = false;
-    var tab_bar_resize_hovered: bool = false;
+    // UI State (using modular UIState)
+    var ui = UIState.init();
 
     // === Search state ===
     var search_visible = false;
@@ -1490,21 +1464,21 @@ pub fn main() !void {
             my >= menu_y and my < menu_y + menu_height;
 
         if (in_menu_block) {
-            menu_hover = @divTrunc(mx - menu_x, menu_section);
-            if (menu_hover > 2) menu_hover = 2;
+            ui.menu_hover = @divTrunc(mx - menu_x, menu_section);
+            if (ui.menu_hover > 2) ui.menu_hover = 2;
         } else {
-            menu_hover = -1;
+            ui.menu_hover = -1;
         }
 
         // If menu is open - redraw and handle dropdown hover
-        if (menu_open >= 0) {
+        if (ui.menu_open >= 0) {
             const menu_block_x: i32 = scaleI(8, zoom_level);
             const menu_block_y: i32 = @divTrunc(titlebar_h_loop - scaleI(26, zoom_level), 2);
             const menu_section_w: i32 = scaleI(46, zoom_level);
-            const dropdown_x: i32 = menu_block_x + menu_open * menu_section_w;
+            const dropdown_x: i32 = menu_block_x + ui.menu_open * menu_section_w;
             const dropdown_y: i32 = menu_block_y + scaleI(26, zoom_level) + 2;
             const dropdown_w: i32 = scaleI(160, zoom_level);
-            const items_count: i32 = if (menu_open == 0) 4 else if (menu_open == 1) 7 else 10;
+            const items_count: i32 = if (ui.menu_open == 0) 4 else if (ui.menu_open == 1) 7 else 10;
             const dropdown_h: i32 = items_count * scaleI(28, zoom_level) + scaleI(8, zoom_level);
 
             const in_dropdown = mx >= dropdown_x and mx < dropdown_x + dropdown_w and
@@ -1514,15 +1488,15 @@ pub fn main() !void {
                 const rel_y = my - dropdown_y - 4;
                 const new_item_hover = @divTrunc(rel_y, 28);
                 if (new_item_hover >= 0 and new_item_hover < items_count) {
-                    menu_item_hover = new_item_hover;
+                    ui.menu_item_hover = new_item_hover;
                 } else {
-                    menu_item_hover = -1;
+                    ui.menu_item_hover = -1;
                 }
             } else {
-                menu_item_hover = -1;
+                ui.menu_item_hover = -1;
             }
             needs_redraw = true;
-        } else if (menu_hover >= 0) {
+        } else if (ui.menu_hover >= 0) {
             needs_redraw = true;
         }
 
@@ -1531,8 +1505,8 @@ pub fn main() !void {
             wayland.mouse_moved = false;
 
             // Handle scrollbar drag (accounting for zoom)
-            if (dragging_vbar) {
-                const delta = wayland.mouse_y - drag_start_mouse;
+            if (ui.dragging_vbar) {
+                const delta = wayland.mouse_y - ui.drag_start_mouse;
                 const line_h: i32 = @intCast(gpu.lineHeight());
                 const titlebar_h_drag: u32 = scaleUI(TITLEBAR_HEIGHT, zoom_level);
                 const vbar_height: i32 = @intCast(wayland.height - titlebar_h_drag - 18 - 12);
@@ -1540,15 +1514,15 @@ pub fn main() !void {
                 const visible_height: i32 = @as(i32, @intCast(wayland.height)) - @as(i32, @intCast(titlebar_h_drag)) - 30;
                 const max_scroll = @max(0, content_height - visible_height);
                 const scroll_per_pixel = @divTrunc(max_scroll * 100, @max(1, vbar_height));
-                const new_scroll = drag_start_scroll + @divTrunc(delta * scroll_per_pixel, 100);
+                const new_scroll = ui.drag_start_scroll + @divTrunc(delta * scroll_per_pixel, 100);
                 scroll_y = @max(0, @min(max_scroll, new_scroll));
                 needs_redraw = true;
-            } else if (dragging_hbar) {
-                const delta = wayland.mouse_x - drag_start_mouse;
+            } else if (ui.dragging_hbar) {
+                const delta = wayland.mouse_x - ui.drag_start_mouse;
                 const char_w: i32 = @intCast(gpu.charWidth());
                 // Account for sidebar when calculating width (with zoom)
                 const editor_margin: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
-                const editor_left_drag: i32 = if (sidebar_visible) sidebar_width + editor_margin else editor_margin;
+                const editor_left_drag: i32 = if (ui.sidebar_visible) ui.sidebar_width + editor_margin else editor_margin;
                 const editor_w_drag: i32 = @as(i32, @intCast(wayland.width)) - editor_margin - editor_left_drag;
                 const hbar_width: i32 = editor_w_drag - 18 - 8;
                 // Entire field moves together
@@ -1557,27 +1531,27 @@ pub fn main() !void {
                 const visible_width: i32 = editor_w_drag - 18;
                 const max_scroll_x = @max(0, content_width - visible_width);
                 const scroll_per_pixel = @divTrunc(max_scroll_x * 100, @max(1, hbar_width));
-                const new_scroll = drag_start_scroll + @divTrunc(delta * scroll_per_pixel, 100);
+                const new_scroll = ui.drag_start_scroll + @divTrunc(delta * scroll_per_pixel, 100);
                 scroll_x = @max(0, @min(max_scroll_x, new_scroll));
                 needs_redraw = true;
-            } else if (dragging_sidebar) {
+            } else if (ui.dragging_sidebar) {
                 // Resize sidebar (mouse_x + 6 to account for padding)
-                sidebar_width = @max(100, @min(500, wayland.mouse_x + 6));
+                ui.sidebar_width = @max(100, @min(500, wayland.mouse_x + 6));
                 needs_redraw = true;
-            } else if (dragging_bottom_panel) {
+            } else if (ui.dragging_bottom_panel) {
                 // Resize bottom panel (drag up increases height)
-                const delta = drag_start_mouse - wayland.mouse_y;
-                g_bottom_panel_height = @max(80, @min(400, drag_start_scroll + delta));
+                const delta = ui.drag_start_mouse - wayland.mouse_y;
+                g_bottom_panel_height = @max(80, @min(400, ui.drag_start_scroll + delta));
                 needs_redraw = true;
-            } else if (dragging_tab_bar) {
+            } else if (ui.dragging_tab_bar) {
                 // Resize tab bar (drag up decreases height)
-                const delta = wayland.mouse_y - drag_start_mouse;
-                g_tab_bar_height = @max(30, @min(80, drag_start_scroll - delta));
+                const delta = wayland.mouse_y - ui.drag_start_mouse;
+                g_tab_bar_height = @max(30, @min(80, ui.drag_start_scroll - delta));
                 needs_redraw = true;
             } else if (selection.dragging) {
                 // Only update cursor position on mouse movement
                 // Index and cache should already be valid (built during render or first click)
-                const click_pos = screenToTextPos(&gpu, &text_buffer, wayland.mouse_x, wayland.mouse_y, scroll_x, scroll_y, sidebar_visible, sidebar_width);
+                const click_pos = screenToTextPos(&gpu, &text_buffer, wayland.mouse_x, wayland.mouse_y, scroll_x, scroll_y, ui.sidebar_visible, ui.sidebar_width);
                 if (click_pos) |pos| {
                     text_buffer.moveCursor(pos);
                 }
@@ -1595,7 +1569,7 @@ pub fn main() !void {
             const wh: i32 = @intCast(wayland.height);
             // Account for sidebar for horizontal scrollbar
             const editor_margin_cursor: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
-            const editor_left_cursor: i32 = if (sidebar_visible) sidebar_width + editor_margin_cursor else editor_margin_cursor;
+            const editor_left_cursor: i32 = if (ui.sidebar_visible) ui.sidebar_width + editor_margin_cursor else editor_margin_cursor;
             const in_vbar = mouse_px >= ww - scrollbar_zone and mouse_py > titlebar_h_loop and mouse_py < wh - scrollbar_zone;
             const in_hbar = mouse_py >= wh - scrollbar_zone and mouse_px > editor_left_cursor and mouse_px < ww - scrollbar_zone;
 
@@ -1607,14 +1581,14 @@ pub fn main() !void {
             const resize_bar_center = sidebar_y_edge + @divTrunc(sidebar_h_edge, 2);
             const resize_bar_top = resize_bar_center - @divTrunc(resize_handle_h, 2);
             const resize_bar_bottom = resize_bar_center + @divTrunc(resize_handle_h, 2);
-            const sidebar_edge = sidebar_width - sidebar_margin_edge - 3;
-            const on_sidebar_edge = sidebar_visible and
+            const sidebar_edge = ui.sidebar_width - sidebar_margin_edge - 3;
+            const on_sidebar_edge = ui.sidebar_visible and
                 wayland.mouse_x >= sidebar_edge - 4 and wayland.mouse_x <= sidebar_edge + 8 and
                 wayland.mouse_y >= resize_bar_top and wayland.mouse_y <= resize_bar_bottom;
 
             // Update hover state of resize bar
-            if (on_sidebar_edge != sidebar_resize_hovered) {
-                sidebar_resize_hovered = on_sidebar_edge;
+            if (on_sidebar_edge != ui.sidebar_resize_hovered) {
+                ui.sidebar_resize_hovered = on_sidebar_edge;
                 needs_redraw = true;
             }
 
@@ -1625,14 +1599,14 @@ pub fn main() !void {
             const on_tab_bar_edge = wayland.mouse_y >= tab_bar_top - 4 and wayland.mouse_y <= tab_bar_top + 4 and
                 wayland.mouse_x >= tab_bar_left and wayland.mouse_x <= tab_bar_right;
 
-            if (on_tab_bar_edge != tab_bar_resize_hovered) {
-                tab_bar_resize_hovered = on_tab_bar_edge;
+            if (on_tab_bar_edge != ui.tab_bar_resize_hovered) {
+                ui.tab_bar_resize_hovered = on_tab_bar_edge;
                 needs_redraw = true;
             }
 
             // Check hover over sidebar tabs (with zoom)
             var new_sidebar_tab_hovered: i32 = -1;
-            if (sidebar_visible and wayland.mouse_x < sidebar_width and wayland.mouse_y > titlebar_h_loop) {
+            if (ui.sidebar_visible and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > titlebar_h_loop) {
                 const sidebar_margin_h: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const sidebar_y_h: i32 = titlebar_h_loop + sidebar_margin_h;
                 const stab_y_h: i32 = sidebar_y_h + scaleI(8, zoom_level);
@@ -1651,21 +1625,21 @@ pub fn main() !void {
                     }
                 }
             }
-            if (new_sidebar_tab_hovered != sidebar_tab_hovered) {
-                sidebar_tab_hovered = new_sidebar_tab_hovered;
+            if (new_sidebar_tab_hovered != ui.sidebar_tab_hovered) {
+                ui.sidebar_tab_hovered = new_sidebar_tab_hovered;
                 needs_redraw = true;
             }
 
             // Check hover over Open Folder button (when no folder is open, with zoom)
             var new_open_folder_btn_hovered: bool = false;
-            if (sidebar_visible and current_folder_len == 0 and wayland.mouse_x < sidebar_width and wayland.mouse_y > titlebar_h_loop) {
+            if (ui.sidebar_visible and current_folder_len == 0 and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > titlebar_h_loop) {
                 const sidebar_margin_btn: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const titlebar_h_btn: u32 = scaleUI(TITLEBAR_HEIGHT, zoom_level);
                 const sidebar_y_btn: i32 = @as(i32, @intCast(titlebar_h_btn)) + sidebar_margin_btn;
                 const sidebar_h_btn = wayland.height - titlebar_h_btn - @as(u32, @intCast(sidebar_margin_btn)) * 2;
                 const btn_y: i32 = sidebar_y_btn + @as(i32, @intCast(sidebar_h_btn / 2)) - scaleI(20, zoom_level);
                 const btn_x: i32 = sidebar_margin_btn + scaleI(20, zoom_level);
-                const btn_w: i32 = sidebar_width - scaleI(56, zoom_level);
+                const btn_w: i32 = ui.sidebar_width - scaleI(56, zoom_level);
                 const btn_h: i32 = scaleI(36, zoom_level);
                 if (wayland.mouse_x >= btn_x and wayland.mouse_x < btn_x + btn_w and
                     wayland.mouse_y >= btn_y and wayland.mouse_y < btn_y + btn_h)
@@ -1673,8 +1647,8 @@ pub fn main() !void {
                     new_open_folder_btn_hovered = true;
                 }
             }
-            if (new_open_folder_btn_hovered != open_folder_btn_hovered) {
-                open_folder_btn_hovered = new_open_folder_btn_hovered;
+            if (new_open_folder_btn_hovered != ui.open_folder_btn_hovered) {
+                ui.open_folder_btn_hovered = new_open_folder_btn_hovered;
                 needs_redraw = true;
             }
 
@@ -1682,10 +1656,10 @@ pub fn main() !void {
             var new_fm_add_file_hovered: bool = false;
             var new_fm_add_folder_hovered: bool = false;
             var new_fm_delete_hovered: bool = false;
-            if (sidebar_visible and sidebar_active_tab == 0 and current_folder_len > 0 and wayland.mouse_x < sidebar_width) {
+            if (ui.sidebar_visible and ui.sidebar_active_tab == 0 and current_folder_len > 0 and wayland.mouse_x < ui.sidebar_width) {
                 const sidebar_margin_fm: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const sidebar_x_fm: i32 = sidebar_margin_fm;
-                const sidebar_w_fm: i32 = sidebar_width - sidebar_margin_fm * 2;
+                const sidebar_w_fm: i32 = ui.sidebar_width - sidebar_margin_fm * 2;
                 const sidebar_y_fm: i32 = titlebar_h_loop + sidebar_margin_fm;
                 const header_y_fm: i32 = sidebar_y_fm + scaleI(8 + 24 + 12, zoom_level);
                 const btn_size_fm: i32 = scaleI(22, zoom_level);
@@ -1725,7 +1699,7 @@ pub fn main() !void {
 
             // Check hover over explorer items (with zoom)
             var new_explorer_hovered: i32 = -1;
-            if (sidebar_visible and sidebar_active_tab == 0 and wayland.mouse_x < sidebar_width and wayland.mouse_y > titlebar_h_loop) {
+            if (ui.sidebar_visible and ui.sidebar_active_tab == 0 and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > titlebar_h_loop) {
                 const sidebar_margin_h: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const sidebar_y_h: i32 = titlebar_h_loop + sidebar_margin_h;
                 const file_start_y_h: i32 = sidebar_y_h + scaleI(8 + 24 + 12 + 20, zoom_level); // tabs + separator + header
@@ -1746,10 +1720,10 @@ pub fn main() !void {
 
             // Check hover over plugins in sidebar
             var new_plugin_hovered: i32 = -1;
-            if (sidebar_visible and sidebar_active_tab == 3 and wayland.mouse_x < sidebar_width and wayland.mouse_y > titlebar_h_loop) {
+            if (ui.sidebar_visible and ui.sidebar_active_tab == 3 and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > titlebar_h_loop) {
                 const sidebar_margin_h: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const sidebar_y_h: i32 = titlebar_h_loop + sidebar_margin_h;
-                const sidebar_w_h: i32 = sidebar_width - sidebar_margin_h * 2;
+                const sidebar_w_h: i32 = ui.sidebar_width - sidebar_margin_h * 2;
                 const plugin_start_y: i32 = sidebar_y_h + scaleI(8 + 24 + 12 + 20 + 30, zoom_level);
                 const plugin_item_h: i32 = 58;
 
@@ -1777,10 +1751,10 @@ pub fn main() !void {
 
             // Check hover over disabled plugins
             var new_disabled_plugin_hovered: i32 = -1;
-            if (sidebar_visible and sidebar_active_tab == 3 and wayland.mouse_x < sidebar_width and wayland.mouse_y > titlebar_h_loop) {
+            if (ui.sidebar_visible and ui.sidebar_active_tab == 3 and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > titlebar_h_loop) {
                 const sidebar_margin_h: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const sidebar_y_h: i32 = titlebar_h_loop + sidebar_margin_h;
-                const sidebar_w_h: i32 = sidebar_width - sidebar_margin_h * 2;
+                const sidebar_w_h: i32 = ui.sidebar_width - sidebar_margin_h * 2;
                 const plugin_start_y: i32 = sidebar_y_h + scaleI(8 + 24 + 12 + 20 + 30, zoom_level);
                 const plugin_item_h: i32 = 58;
                 const disabled_item_h: i32 = 44;
@@ -1816,7 +1790,7 @@ pub fn main() !void {
 
             // Check hover over search results
             var new_search_result_hovered: i32 = -1;
-            if (sidebar_visible and sidebar_active_tab == 1 and wayland.mouse_x < sidebar_width and wayland.mouse_y > titlebar_h_loop) {
+            if (ui.sidebar_visible and ui.sidebar_active_tab == 1 and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > titlebar_h_loop) {
                 const sidebar_margin_h: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
                 const sidebar_y_h: i32 = titlebar_h_loop + sidebar_margin_h;
                 const search_area_y: i32 = sidebar_y_h + scaleI(8 + 24 + 12 + 20, zoom_level);
@@ -1842,7 +1816,7 @@ pub fn main() !void {
             var new_tab_close_hovered: i32 = -1;
             // Coordinates match render function (with zoom)
             const hover_editor_margin: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
-            const hover_editor_left: i32 = if (sidebar_visible) sidebar_width + hover_editor_margin else hover_editor_margin;
+            const hover_editor_left: i32 = if (ui.sidebar_visible) ui.sidebar_width + hover_editor_margin else hover_editor_margin;
             const hover_tab_bar_h: i32 = @intCast(scaleUI(TAB_BAR_HEIGHT, zoom_level));
             const hover_editor_bottom: i32 = @as(i32, @intCast(wayland.height)) - hover_editor_margin - hover_tab_bar_h - 4;
             const tab_bar_y_hover: i32 = hover_editor_bottom + 4;
@@ -1879,7 +1853,7 @@ pub fn main() !void {
             }
 
             // Settings popup hover handling
-            if (settings_visible) {
+            if (ui.settings_visible) {
                 const popup_w: i32 = 400;
                 const popup_h: i32 = 300;
                 const popup_x: i32 = @divTrunc(@as(i32, @intCast(wayland.width)) - popup_w, 2);
@@ -1901,7 +1875,7 @@ pub fn main() !void {
                     }
 
                     // Checkbox hover check (only in Additional tab)
-                    if (settings_active_tab == 1) {
+                    if (ui.settings_active_tab == 1) {
                         const content_y = popup_y + 100;
                         const checkbox_x = popup_x + 16;
                         if (my >= content_y and my < content_y + 18 and mx >= checkbox_x and mx < checkbox_x + 200) {
@@ -1936,10 +1910,10 @@ pub fn main() !void {
                 const new_close_hover = mx >= close_btn_x and mx < close_btn_x + 24 and
                     my >= close_btn_y and my < close_btn_y + 24;
 
-                if (new_tab_hover != settings_tab_hovered or new_checkbox_hover != settings_checkbox_hovered or new_close_hover != settings_close_hovered) {
-                    settings_tab_hovered = new_tab_hover;
-                    settings_checkbox_hovered = new_checkbox_hover;
-                    settings_close_hovered = new_close_hover;
+                if (new_tab_hover != ui.settings_tab_hovered or new_checkbox_hover != ui.settings_checkbox_hovered or new_close_hover != ui.settings_close_hovered) {
+                    ui.settings_tab_hovered = new_tab_hover;
+                    ui.settings_checkbox_hovered = new_checkbox_hover;
+                    ui.settings_close_hovered = new_close_hover;
                     needs_redraw = true;
                 }
 
@@ -1974,7 +1948,7 @@ pub fn main() !void {
                 wayland.setCursor(.pointer);
             } else if (wayland.mouse_y >= @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level)))) {
                 // In text area
-                const editor_left_cursor_h: i32 = if (sidebar_visible) sidebar_width + scaleI(10, zoom_level) else scaleI(10, zoom_level);
+                const editor_left_cursor_h: i32 = if (ui.sidebar_visible) ui.sidebar_width + scaleI(10, zoom_level) else scaleI(10, zoom_level);
                 if (wayland.mouse_x > editor_left_cursor_h + @as(i32, @intCast(scaleUI(GUTTER_WIDTH, zoom_level)))) {
                     wayland.setCursor(.text);
                 } else {
@@ -1998,7 +1972,7 @@ pub fn main() !void {
         // Handle mouse wheel scroll
         if (wayland.scroll_delta_x != 0 or wayland.scroll_delta_y != 0) {
             // Check if cursor is over sidebar
-            const mouse_over_sidebar = sidebar_visible and wayland.mouse_x < sidebar_width and wayland.mouse_y > @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level)));
+            const mouse_over_sidebar = ui.sidebar_visible and wayland.mouse_x < ui.sidebar_width and wayland.mouse_y > @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level)));
 
             if (mouse_over_sidebar and folder_file_count > 0) {
                 // Scroll explorer
@@ -2024,7 +1998,7 @@ pub fn main() !void {
                 const content_w = @as(i32, @intCast(scaleUI(GUTTER_WIDTH, zoom_level))) + scaleI(12, zoom_level) + @as(i32, @intCast(max_line)) * char_w + char_w * 10;
                 // Account for sidebar when calculating visible width
                 const editor_margin_scroll: i32 = scaleI(10, zoom_level);
-                const editor_left_scroll: i32 = if (sidebar_visible) sidebar_width + editor_margin_scroll else editor_margin_scroll;
+                const editor_left_scroll: i32 = if (ui.sidebar_visible) ui.sidebar_width + editor_margin_scroll else editor_margin_scroll;
                 const visible_w: i32 = @as(i32, @intCast(wayland.width)) - editor_margin_scroll - editor_left_scroll - scaleI(20, zoom_level);
                 const max_scroll_x = @max(0, content_w - visible_w);
 
@@ -2036,7 +2010,7 @@ pub fn main() !void {
 
                 if (g_scroll_inertia) {
                     // Inertia: add to velocity
-                    scroll_velocity_y += @as(f32, @floatFromInt(scroll_delta_y_scaled)) * 0.8;
+                    ui.scroll_velocity_y += @as(f32, @floatFromInt(scroll_delta_y_scaled)) * 0.8;
                 } else {
                     // No inertia: direct scroll
                     scroll_y = @max(0, @min(max_scroll_y, scroll_y + scroll_delta_y_scaled));
@@ -2056,7 +2030,7 @@ pub fn main() !void {
             const titlebar_h_drag: i32 = @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level));
             const tab_bar_h_drag: i32 = @intCast(scaleUI(TAB_BAR_HEIGHT, zoom_level));
             const editor_margin_drag: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
-            const editor_left_drag: i32 = if (sidebar_visible) sidebar_width + editor_margin_drag else editor_margin_drag;
+            const editor_left_drag: i32 = if (ui.sidebar_visible) ui.sidebar_width + editor_margin_drag else editor_margin_drag;
             const editor_top_drag: i32 = titlebar_h_drag + editor_margin_drag;
             const editor_bottom_drag: i32 = @as(i32, @intCast(wayland.height)) - editor_margin_drag - tab_bar_h_drag - 4;
             const editor_right_drag: i32 = @as(i32, @intCast(wayland.width)) - editor_margin_drag - 18;
@@ -2120,7 +2094,7 @@ pub fn main() !void {
             // Update cursor position if scrolled
             if (did_scroll) {
                 // Don't rebuild index - use existing (valid while text unchanged)
-                const drag_pos = screenToTextPos(&gpu, &text_buffer, wayland.mouse_x, wayland.mouse_y, scroll_x, scroll_y, sidebar_visible, sidebar_width);
+                const drag_pos = screenToTextPos(&gpu, &text_buffer, wayland.mouse_x, wayland.mouse_y, scroll_x, scroll_y, ui.sidebar_visible, ui.sidebar_width);
                 if (drag_pos) |pos| {
                     text_buffer.moveCursor(pos);
                 }
@@ -2129,15 +2103,15 @@ pub fn main() !void {
         }
 
         // Apply scroll inertia
-        if (g_scroll_inertia and @abs(scroll_velocity_y) > 0.5) {
+        if (g_scroll_inertia and @abs(ui.scroll_velocity_y) > 0.5) {
             const line_height_inertia: i32 = @intCast(gpu.lineHeight());
             const content_h_inertia = @as(i32, @intCast(g_cached_line_count)) * line_height_inertia + line_height_inertia * 5;
             const visible_h_inertia: i32 = @as(i32, @intCast(wayland.height)) - @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level))) - scaleI(30, zoom_level);
             const max_scroll_y_inertia = @max(0, content_h_inertia - visible_h_inertia);
 
-            scroll_y = @max(0, @min(max_scroll_y_inertia, scroll_y + @as(i32, @intFromFloat(scroll_velocity_y))));
-            scroll_velocity_y *= 0.92; // Friction
-            if (@abs(scroll_velocity_y) < 0.5) scroll_velocity_y = 0;
+            scroll_y = @max(0, @min(max_scroll_y_inertia, scroll_y + @as(i32, @intFromFloat(ui.scroll_velocity_y))));
+            ui.scroll_velocity_y *= 0.92; // Friction
+            if (@abs(ui.scroll_velocity_y) < 0.5) ui.scroll_velocity_y = 0;
             needs_redraw = true;
         }
 
@@ -2212,14 +2186,14 @@ pub fn main() !void {
                     const wh: i32 = @intCast(wayland.height);
                     // Account for sidebar for horizontal scrollbar
                     const editor_margin_click: i32 = scaleI(10, zoom_level);
-                    const editor_left_click: i32 = if (sidebar_visible) sidebar_width + editor_margin_click else editor_margin_click;
+                    const editor_left_click: i32 = if (ui.sidebar_visible) ui.sidebar_width + editor_margin_click else editor_margin_click;
                     const titlebar_h_click: i32 = @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level));
                     const in_vbar = event.x >= ww - scrollbar_zone and event.y > titlebar_h_click and event.y < wh - scrollbar_zone;
                     const in_hbar = event.y >= wh - scrollbar_zone and event.x > editor_left_click and event.x < ww - scrollbar_zone;
 
-                    // Check sidebar edge for resize (visual edge = sidebar_width - 6)
-                    const sidebar_edge = sidebar_width - scaleI(6, zoom_level);
-                    const on_sidebar_edge = sidebar_visible and
+                    // Check sidebar edge for resize (visual edge = ui.sidebar_width - 6)
+                    const sidebar_edge = ui.sidebar_width - scaleI(6, zoom_level);
+                    const on_sidebar_edge = ui.sidebar_visible and
                         event.x >= sidebar_edge - scaleI(4, zoom_level) and event.x <= sidebar_edge + scaleI(8, zoom_level) and
                         event.y > titlebar_h_click;
 
@@ -2232,24 +2206,24 @@ pub fn main() !void {
                         event.x >= tb_left and event.x <= tb_right;
 
                     if (on_sidebar_edge) {
-                        dragging_sidebar = true;
+                        ui.dragging_sidebar = true;
                     } else if (on_tab_bar_edge) {
-                        dragging_tab_bar = true;
-                        drag_start_scroll = g_tab_bar_height;
-                        drag_start_mouse = event.y;
+                        ui.dragging_tab_bar = true;
+                        ui.drag_start_scroll = g_tab_bar_height;
+                        ui.drag_start_mouse = event.y;
                     } else if (in_vbar) {
                         // Begin vertical scrollbar drag
-                        dragging_vbar = true;
-                        drag_start_scroll = scroll_y;
-                        drag_start_mouse = event.y;
+                        ui.dragging_vbar = true;
+                        ui.drag_start_scroll = scroll_y;
+                        ui.drag_start_mouse = event.y;
                     } else if (in_hbar) {
                         // Begin horizontal scrollbar drag
-                        dragging_hbar = true;
-                        drag_start_scroll = scroll_x;
-                        drag_start_mouse = event.x;
+                        ui.dragging_hbar = true;
+                        ui.drag_start_scroll = scroll_x;
+                        ui.drag_start_mouse = event.x;
                     } else if (resize_edge != wl.RESIZE_NONE) {
                         wayland.startResize(resize_edge);
-                    } else if (settings_visible) {
+                    } else if (ui.settings_visible) {
                         // Settings popup click handling
                         const popup_w: i32 = 400;
                         const popup_h: i32 = 300;
@@ -2262,7 +2236,7 @@ pub fn main() !void {
                         if (event.x >= close_btn_x and event.x < close_btn_x + 24 and
                             event.y >= close_btn_y and event.y < close_btn_y + 24)
                         {
-                            settings_visible = false;
+                            ui.settings_visible = false;
                             needs_redraw = true;
                         }
 
@@ -2271,18 +2245,18 @@ pub fn main() !void {
                         if (event.y >= tab_y and event.y < tab_y + 28) {
                             // About tab
                             if (event.x >= popup_x + 12 and event.x < popup_x + 82) {
-                                settings_active_tab = 0;
+                                ui.settings_active_tab = 0;
                                 needs_redraw = true;
                             }
                             // Additional tab
                             else if (event.x >= popup_x + 90 and event.x < popup_x + 180) {
-                                settings_active_tab = 1;
+                                ui.settings_active_tab = 1;
                                 needs_redraw = true;
                             }
                         }
 
                         // Checkbox clicks (only in Additional tab)
-                        if (settings_active_tab == 1) {
+                        if (ui.settings_active_tab == 1) {
                             const content_y = popup_y + 100;
                             const checkbox_x = popup_x + 16;
                             const checkbox_y = content_y;
@@ -2292,7 +2266,7 @@ pub fn main() !void {
                                 event.x >= checkbox_x and event.x < checkbox_x + 200)
                             {
                                 g_scroll_inertia = !g_scroll_inertia;
-                                scroll_velocity_y = 0; // Reset velocity on toggle
+                                ui.scroll_velocity_y = 0; // Reset velocity on toggle
                                 saveSettings(); // Save to ~/.mncode
                                 needs_redraw = true;
                             }
@@ -2309,20 +2283,20 @@ pub fn main() !void {
                         if (event.x < popup_x or event.x > popup_x + popup_w or
                             event.y < popup_y or event.y > popup_y + popup_h)
                         {
-                            settings_visible = false;
+                            ui.settings_visible = false;
                             needs_redraw = true;
                         }
-                    } else if (menu_open >= 0) {
+                    } else if (ui.menu_open >= 0) {
                         // Dropdown menu click handling
                         const menu_block_x: i32 = scaleI(8, zoom_level);
                         const menu_block_y: i32 = @divTrunc(@as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level))) - scaleI(26, zoom_level), 2);
                         const menu_section_w: i32 = scaleI(46, zoom_level);
-                        const dropdown_x: i32 = menu_block_x + menu_open * menu_section_w;
+                        const dropdown_x: i32 = menu_block_x + ui.menu_open * menu_section_w;
                         const dropdown_y: i32 = menu_block_y + scaleI(26, zoom_level) + scaleI(2, zoom_level);
                         const dropdown_w: i32 = scaleI(160, zoom_level);
 
                         // Number of items in each menu
-                        const items_count: i32 = if (menu_open == 0) 4 else if (menu_open == 1) 7 else 10;
+                        const items_count: i32 = if (ui.menu_open == 0) 4 else if (ui.menu_open == 1) 7 else 10;
                         const dropdown_h: i32 = items_count * scaleI(28, zoom_level) + scaleI(8, zoom_level);
 
                         const in_dropdown = event.x >= dropdown_x and event.x < dropdown_x + dropdown_w and
@@ -2337,7 +2311,7 @@ pub fn main() !void {
                             const rel_y = event.y - dropdown_y - scaleI(4, zoom_level);
                             const item_idx: i32 = @divTrunc(rel_y, scaleI(28, zoom_level));
 
-                            if (menu_open == 0) {
+                            if (ui.menu_open == 0) {
                                 // File menu
                                 if (item_idx == 0) {
                                     // New - new tab
@@ -2369,7 +2343,7 @@ pub fn main() !void {
                                 } else if (item_idx == 2) {
                                     // Open Folder
                                     openFolderDialog(&current_folder_path, &current_folder_len, &folder_files, &folder_file_lens, &folder_file_count, &folder_is_dir, &folder_expanded, &folder_anim_progress, &folder_indent, &folder_parent, &folder_full_path, &folder_full_path_lens);
-                                    sidebar_visible = true;
+                                    ui.sidebar_visible = true;
                                 } else if (item_idx == 3) {
                                     // Save
                                     if (tab_path_lens[active_tab] > 0) {
@@ -2421,7 +2395,7 @@ pub fn main() !void {
                                         selection.clear();
                                     }
                                 }
-                            } else if (menu_open == 1) {
+                            } else if (ui.menu_open == 1) {
                                 // Edit menu
                                 if (item_idx == 0) {
                                     // Undo - not yet implemented
@@ -2458,13 +2432,13 @@ pub fn main() !void {
                                     editor_focused = false; // Focus on search
                                 } else if (item_idx == 6) {
                                     // Settings
-                                    settings_visible = true;
+                                    ui.settings_visible = true;
                                 }
-                            } else if (menu_open == 2) {
+                            } else if (ui.menu_open == 2) {
                                 // View menu
                                 if (item_idx == 0) {
                                     // Toggle Explorer
-                                    sidebar_visible = !sidebar_visible;
+                                    ui.sidebar_visible = !ui.sidebar_visible;
                                 } else if (item_idx == 1) {
                                     // Zoom In
                                     zoom_level = @min(ZOOM_MAX, zoom_level + ZOOM_STEP);
@@ -2501,23 +2475,23 @@ pub fn main() !void {
                                 }
                             }
 
-                            menu_open = -1;
-                            menu_item_hover = -1;
+                            ui.menu_open = -1;
+                            ui.menu_item_hover = -1;
                             needs_redraw = true;
                         } else if (in_menu_block_click) {
                             // Switch to different menu
                             const new_menu = @divTrunc(event.x - menu_block_x, menu_section_w);
-                            if (new_menu == menu_open) {
-                                menu_open = -1;
+                            if (new_menu == ui.menu_open) {
+                                ui.menu_open = -1;
                             } else {
-                                menu_open = @min(2, new_menu);
+                                ui.menu_open = @min(2, new_menu);
                             }
-                            menu_item_hover = -1;
+                            ui.menu_item_hover = -1;
                             needs_redraw = true;
                         } else {
                             // Clicked outside - close menu
-                            menu_open = -1;
-                            menu_item_hover = -1;
+                            ui.menu_open = -1;
+                            ui.menu_item_hover = -1;
                             needs_redraw = true;
                         }
                     } else if (event.y >= 0 and event.y < @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level)))) {
@@ -2555,14 +2529,14 @@ pub fn main() !void {
                         } else if (in_menu_block_click) {
                             // Open menu
                             const menu_section_w: i32 = scaleI(46, zoom_level);
-                            menu_open = @min(2, @divTrunc(event.x - menu_block_x, menu_section_w));
-                            menu_item_hover = -1;
+                            ui.menu_open = @min(2, @divTrunc(event.x - menu_block_x, menu_section_w));
+                            ui.menu_item_hover = -1;
                             needs_redraw = true;
                         } else {
                             // Drag via rest of titlebar
                             wayland.startMove();
                         }
-                    } else if (sidebar_visible and event.x < sidebar_width and event.y > @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level)))) {
+                    } else if (ui.sidebar_visible and event.x < ui.sidebar_width and event.y > @as(i32, @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level)))) {
                         // Click in sidebar
                         const sidebar_margin: i32 = scaleI(10, zoom_level);
                         const titlebar_h_sb: i32 = @intCast(scaleUI(TITLEBAR_HEIGHT, zoom_level));
@@ -2576,7 +2550,7 @@ pub fn main() !void {
                             var check_x_click: i32 = sidebar_margin + scaleI(8, zoom_level);
                             for (0..4) |tab_i| { // 4 tabs: Explorer, Search, Git, Plugins
                                 if (event.x >= check_x_click and event.x < check_x_click + stab_w_click) {
-                                    sidebar_active_tab = tab_i;
+                                    ui.sidebar_active_tab = tab_i;
                                     needs_redraw = true;
                                     break;
                                 }
@@ -2585,11 +2559,11 @@ pub fn main() !void {
                         }
 
                         // Click on Open Folder button (when no folder is open)
-                        if (sidebar_active_tab == 0 and current_folder_len == 0) {
+                        if (ui.sidebar_active_tab == 0 and current_folder_len == 0) {
                             const sidebar_h_click = wayland.height - scaleUI(TITLEBAR_HEIGHT, zoom_level) - @as(u32, @intCast(sidebar_margin)) * 2;
                             const btn_y_click: i32 = sidebar_y + @as(i32, @intCast(sidebar_h_click / 2)) - scaleI(20, zoom_level);
                             const btn_x_click: i32 = sidebar_margin + scaleI(10, zoom_level);
-                            const btn_w_click: i32 = @as(i32, @intCast(sidebar_width)) - scaleI(20, zoom_level);
+                            const btn_w_click: i32 = @as(i32, @intCast(ui.sidebar_width)) - scaleI(20, zoom_level);
                             const btn_h_click: i32 = scaleI(36, zoom_level);
                             if (event.x >= btn_x_click and event.x < btn_x_click + btn_w_click and
                                 event.y >= btn_y_click and event.y < btn_y_click + btn_h_click)
@@ -2600,9 +2574,9 @@ pub fn main() !void {
                         }
 
                         // Click on file manager buttons (New File, New Folder, Delete)
-                        if (sidebar_active_tab == 0 and current_folder_len > 0) {
+                        if (ui.sidebar_active_tab == 0 and current_folder_len > 0) {
                             const sidebar_x_fm: i32 = sidebar_margin;
-                            const sidebar_w_fm: i32 = sidebar_width - sidebar_margin * 2;
+                            const sidebar_w_fm: i32 = ui.sidebar_width - sidebar_margin * 2;
                             const header_y_fm: i32 = sidebar_y + scaleI(8 + 24 + 12, zoom_level);
                             const btn_size_fm: i32 = scaleI(22, zoom_level);
                             const btn_spacing_fm: i32 = scaleI(2, zoom_level);
@@ -2649,7 +2623,7 @@ pub fn main() !void {
                         const file_start_y: i32 = sidebar_y + scaleI(8 + 24 + 12 + 20, zoom_level); // tabs + separator + header
                         const file_item_h: i32 = scaleI(28, zoom_level);
 
-                        if (sidebar_active_tab == 0 and event.y >= file_start_y and folder_file_count > 0) {
+                        if (ui.sidebar_active_tab == 0 and event.y >= file_start_y and folder_file_count > 0) {
                             const rel_y = event.y - file_start_y + explorer_scroll;
                             const clicked_idx: i32 = @divTrunc(rel_y, file_item_h);
                             if (clicked_idx >= 0 and clicked_idx < @as(i32, @intCast(folder_file_count))) {
@@ -2769,7 +2743,7 @@ pub fn main() !void {
                         }
 
                         // Click on Search tab
-                        if (sidebar_active_tab == 1) {
+                        if (ui.sidebar_active_tab == 1) {
                             const search_area_y_click: i32 = sidebar_y + scaleI(8 + 24 + 12 + 20, zoom_level);
                             const input_y_click: i32 = search_area_y_click + 10;
                             const input_h_click: i32 = 28;
@@ -2857,7 +2831,7 @@ pub fn main() !void {
                         }
 
                         // Click on plugins (Plugins tab)
-                        if (sidebar_active_tab == 3) {
+                        if (ui.sidebar_active_tab == 3) {
                             const plugin_start_y_click: i32 = sidebar_y + scaleI(8 + 24 + 12 + 20 + 30, zoom_level); // tabs + separator + header + "INSTALLED"
                             const plugin_item_h_click: i32 = 58;
 
@@ -2941,7 +2915,7 @@ pub fn main() !void {
                     } else {
                         // Check click in tab bar (coordinates match render, with zoom)
                         const click_editor_margin: i32 = scaleI(@as(i32, EDITOR_MARGIN), zoom_level);
-                        const click_editor_left: i32 = if (sidebar_visible) sidebar_width + click_editor_margin else click_editor_margin;
+                        const click_editor_left: i32 = if (ui.sidebar_visible) ui.sidebar_width + click_editor_margin else click_editor_margin;
                         const click_tab_bar_h: i32 = @intCast(scaleUI(TAB_BAR_HEIGHT, zoom_level));
                         const click_editor_bottom: i32 = @as(i32, @intCast(wayland.height)) - click_editor_margin - click_tab_bar_h - 4;
                         const tab_bar_y: i32 = click_editor_bottom + 4;
@@ -3044,7 +3018,7 @@ pub fn main() !void {
                             }
 
                             // Check click on buttons on the right (Run, Panel)
-                            const click_tab_bar_w: i32 = @as(i32, @intCast(wayland.width)) - click_editor_margin * 2 - (if (sidebar_visible) sidebar_width else 0);
+                            const click_tab_bar_w: i32 = @as(i32, @intCast(wayland.width)) - click_editor_margin * 2 - (if (ui.sidebar_visible) ui.sidebar_width else 0);
                             const click_tab_bar_right: i32 = tab_bar_x + click_tab_bar_w;
                             const click_right_btn_size: i32 = scaleI(28, zoom_level);
 
@@ -3177,9 +3151,9 @@ pub fn main() !void {
                                 // Click in bottom panel
                                 // Resize handle area (first 10 pixels)
                                 if (event.y < bp_y + 10) {
-                                    dragging_bottom_panel = true;
-                                    drag_start_mouse = event.y;
-                                    drag_start_scroll = g_bottom_panel_height;
+                                    ui.dragging_bottom_panel = true;
+                                    ui.drag_start_mouse = event.y;
+                                    ui.drag_start_scroll = g_bottom_panel_height;
                                 } else {
                                     // Tab clicks
                                     const bp_tab_y_click: i32 = bp_y + 10;
@@ -3208,7 +3182,7 @@ pub fn main() !void {
                                             needs_redraw = true;
                                         }
                                         // Close button (right)
-                                        const bp_w_click: i32 = @as(i32, @intCast(wayland.width)) - click_editor_margin * 2 - (if (sidebar_visible) sidebar_width else 0);
+                                        const bp_w_click: i32 = @as(i32, @intCast(wayland.width)) - click_editor_margin * 2 - (if (ui.sidebar_visible) ui.sidebar_width else 0);
                                         const close_x: i32 = click_editor_left + bp_w_click - 32;
                                         if (event.x >= close_x and event.x < close_x + 20) {
                                             g_bottom_panel_visible = false;
@@ -3221,7 +3195,7 @@ pub fn main() !void {
                                 editor_focused = true;
                                 _ = text_buffer.getTextCached(); // Ensure cache is valid
                                 buildLineIndex(&text_buffer); // Ensure line index for O(1) lookup
-                                const click_pos = screenToTextPos(&gpu, &text_buffer, event.x, event.y, scroll_x, scroll_y, sidebar_visible, sidebar_width);
+                                const click_pos = screenToTextPos(&gpu, &text_buffer, event.x, event.y, scroll_x, scroll_y, ui.sidebar_visible, ui.sidebar_width);
                                 if (click_pos) |pos| {
                                     if (wayland.shift_held) {
                                         if (selection.anchor == null) {
@@ -3308,7 +3282,7 @@ pub fn main() !void {
                                 editor_focused = true; // Return focus to editor
                                 _ = text_buffer.getTextCached(); // Ensure cache is valid
                                 buildLineIndex(&text_buffer); // Ensure line index for O(1) lookup
-                                const click_pos = screenToTextPos(&gpu, &text_buffer, event.x, event.y, scroll_x, scroll_y, sidebar_visible, sidebar_width);
+                                const click_pos = screenToTextPos(&gpu, &text_buffer, event.x, event.y, scroll_x, scroll_y, ui.sidebar_visible, ui.sidebar_width);
                                 if (click_pos) |pos| {
                                     if (wayland.shift_held) {
                                         // Shift+click: extend selection
@@ -3330,11 +3304,11 @@ pub fn main() !void {
                     }
                 } else {
                     // Left mouse button release
-                    dragging_vbar = false;
-                    dragging_hbar = false;
-                    dragging_sidebar = false;
-                    dragging_bottom_panel = false;
-                    dragging_tab_bar = false;
+                    ui.dragging_vbar = false;
+                    ui.dragging_hbar = false;
+                    ui.dragging_sidebar = false;
+                    ui.dragging_bottom_panel = false;
+                    ui.dragging_tab_bar = false;
                     if (selection.dragging) {
                         selection.dragging = false;
                         // If anchor == cursor, just click without movement - remove selection
@@ -3693,7 +3667,7 @@ pub fn main() !void {
                             // Calculate popup position
                             const line_h: i32 = @intCast(gpu.lineHeight());
                             const char_w: i32 = @intCast(gpu.charWidth());
-                            const editor_x: i32 = if (sidebar_visible) sidebar_width else 0;
+                            const editor_x: i32 = if (ui.sidebar_visible) ui.sidebar_width else 0;
                             const gutter_w: u32 = gpu.scaled(GUTTER_WIDTH);
                             g_lsp_completion_x = editor_x + @as(i32, @intCast(gutter_w)) + @as(i32, @intCast(cursor_p.col)) * char_w - scroll_x + 20;
                             g_lsp_completion_y = @as(i32, @intCast(gpu.scaled(TITLEBAR_HEIGHT))) + g_tab_bar_height + @as(i32, @intCast(cursor_p.line)) * line_h - scroll_y + line_h + 10;
@@ -4219,7 +4193,7 @@ pub fn main() !void {
 
             gpu.beginFrame();
             t1 = std.time.milliTimestamp();
-            render(&gpu, &text_buffer, &wayland, &selection, scroll_x, scroll_y, sidebar_visible, sidebar_width, sidebar_active_tab, sidebar_tab_hovered, open_folder_btn_hovered, sidebar_resize_hovered, menu_hover, menu_open, menu_item_hover, settings_visible, settings_active_tab, settings_tab_hovered, settings_checkbox_hovered, &folder_files, &folder_file_lens, folder_file_count, &folder_is_dir, &folder_expanded, &folder_anim_progress, &folder_indent, explorer_selected, explorer_hovered, explorer_scroll, current_folder_len, &tab_names, &tab_name_lens, &tab_modified, tab_count, active_tab, tab_hovered, tab_close_hovered, &tab_paths, &tab_path_lens, &tab_is_plugin, &tab_plugin_idx, plugin_hovered, search_visible, search_field.getText(), search_field.cursor, search_match_count, search_current_match, &search_matches, editor_focused);
+            render(&gpu, &text_buffer, &wayland, &selection, scroll_x, scroll_y, ui.sidebar_visible, ui.sidebar_width, ui.sidebar_active_tab, ui.sidebar_tab_hovered, ui.open_folder_btn_hovered, ui.sidebar_resize_hovered, ui.menu_hover, ui.menu_open, ui.menu_item_hover, ui.settings_visible, ui.settings_active_tab, ui.settings_tab_hovered, ui.settings_checkbox_hovered, &folder_files, &folder_file_lens, folder_file_count, &folder_is_dir, &folder_expanded, &folder_anim_progress, &folder_indent, explorer_selected, explorer_hovered, explorer_scroll, current_folder_len, &tab_names, &tab_name_lens, &tab_modified, tab_count, active_tab, tab_hovered, tab_close_hovered, &tab_paths, &tab_path_lens, &tab_is_plugin, &tab_plugin_idx, plugin_hovered, search_visible, search_field.getText(), search_field.cursor, search_match_count, search_current_match, &search_matches, editor_focused);
             t2 = std.time.milliTimestamp();
             if (t2 - t1 > 16) logger.debug("[RENDER] render(): {}ms\n", .{t2 - t1});
             gpu.endFrame();
