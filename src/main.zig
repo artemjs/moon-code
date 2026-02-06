@@ -28,8 +28,8 @@ const lsp = @import("lsp/client.zig");
 const LazyLoader = @import("editor/lazy_loader.zig").LazyLoader;
 
 // Embedded fonts (compiled into binary)
-const EMBEDDED_FONT = @embedFile("../assets/fonts/DejaVuSansMono.ttf");
-const EMBEDDED_UI_FONT = @embedFile("../assets/fonts/Ubuntu-Light.ttf");
+const EMBEDDED_FONT = @embedFile("assets/fonts/DejaVuSansMono.ttf");
+const EMBEDDED_UI_FONT = @embedFile("assets/fonts/Ubuntu-Light.ttf");
 const FONT_SIZE: f32 = 20.0;
 const UI_FONT_SIZE: f32 = 16.0;
 

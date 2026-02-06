@@ -121,4 +121,91 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run moon-code");
     run_step.dependOn(&run_cmd.step);
+
+    // =========================================================================
+    // Unit Tests
+    // =========================================================================
+
+    // Test for core/logger.zig
+    const logger_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/core/logger.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_logger_tests = b.addRunArtifact(logger_tests);
+
+    // Test for core/errors.zig
+    const errors_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/core/errors.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_errors_tests = b.addRunArtifact(errors_tests);
+
+    // Test for editor/buffer.zig (requires libc for mmap)
+    const buffer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/editor/buffer.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const run_buffer_tests = b.addRunArtifact(buffer_tests);
+
+    // Test for editor/lazy_loader.zig (requires libc due to buffer.zig dependency)
+    const lazy_loader_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/editor/lazy_loader.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const run_lazy_loader_tests = b.addRunArtifact(lazy_loader_tests);
+
+    // Test for ui/state.zig
+    const ui_state_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ui/state.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_ui_state_tests = b.addRunArtifact(ui_state_tests);
+
+    // Test for editor/tab_manager.zig (requires libc due to buffer.zig dependency)
+    const tab_manager_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/editor/tab_manager.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const run_tab_manager_tests = b.addRunArtifact(tab_manager_tests);
+
+    // Test for editor/cache.zig
+    const cache_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/editor/cache.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_cache_tests = b.addRunArtifact(cache_tests);
+
+    // Main test step
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_logger_tests.step);
+    test_step.dependOn(&run_errors_tests.step);
+    test_step.dependOn(&run_buffer_tests.step);
+    test_step.dependOn(&run_lazy_loader_tests.step);
+    test_step.dependOn(&run_ui_state_tests.step);
+    test_step.dependOn(&run_tab_manager_tests.step);
+    test_step.dependOn(&run_cache_tests.step);
 }

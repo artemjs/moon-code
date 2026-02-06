@@ -862,3 +862,175 @@ pub const GapBuffer = struct {
         }
     }
 };
+
+// ============================================================================
+// Unit Tests
+// ============================================================================
+
+test "GapBuffer.init creates empty buffer" {
+    var buf = try GapBuffer.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try std.testing.expectEqual(@as(usize, 0), buf.len());
+    try std.testing.expectEqual(@as(usize, 1), buf.lineCount());
+    try std.testing.expectEqual(@as(usize, 0), buf.cursor());
+}
+
+test "GapBuffer.initWithText creates buffer with content" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "hello");
+    defer buf.deinit();
+
+    try std.testing.expectEqual(@as(usize, 5), buf.len());
+    try std.testing.expectEqual(@as(?u8, 'h'), buf.charAt(0));
+    try std.testing.expectEqual(@as(?u8, 'o'), buf.charAt(4));
+}
+
+test "GapBuffer.insert adds character at cursor" {
+    var buf = try GapBuffer.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try buf.insert('a');
+    try std.testing.expectEqual(@as(usize, 1), buf.len());
+    try std.testing.expectEqual(@as(?u8, 'a'), buf.charAt(0));
+
+    try buf.insert('b');
+    try std.testing.expectEqual(@as(usize, 2), buf.len());
+    try std.testing.expectEqual(@as(?u8, 'b'), buf.charAt(1));
+}
+
+test "GapBuffer.insertSlice adds text at cursor" {
+    var buf = try GapBuffer.init(std.testing.allocator);
+    defer buf.deinit();
+
+    try buf.insertSlice("hello");
+    try std.testing.expectEqual(@as(usize, 5), buf.len());
+
+    try buf.insertSlice(" world");
+    try std.testing.expectEqual(@as(usize, 11), buf.len());
+}
+
+test "GapBuffer.deleteBack removes character before cursor" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "abc");
+    defer buf.deinit();
+
+    buf.moveCursor(3); // Move to end
+    buf.deleteBack();
+
+    try std.testing.expectEqual(@as(usize, 2), buf.len());
+    try std.testing.expectEqual(@as(?u8, 'a'), buf.charAt(0));
+    try std.testing.expectEqual(@as(?u8, 'b'), buf.charAt(1));
+}
+
+test "GapBuffer.deleteForward removes character after cursor" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "abc");
+    defer buf.deinit();
+
+    buf.moveCursor(0);
+    buf.deleteForward();
+
+    try std.testing.expectEqual(@as(usize, 2), buf.len());
+    try std.testing.expectEqual(@as(?u8, 'b'), buf.charAt(0));
+    try std.testing.expectEqual(@as(?u8, 'c'), buf.charAt(1));
+}
+
+test "GapBuffer.charAt returns correct character" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "hello");
+    defer buf.deinit();
+
+    try std.testing.expectEqual(@as(?u8, 'h'), buf.charAt(0));
+    try std.testing.expectEqual(@as(?u8, 'e'), buf.charAt(1));
+    try std.testing.expectEqual(@as(?u8, 'l'), buf.charAt(2));
+    try std.testing.expectEqual(@as(?u8, 'l'), buf.charAt(3));
+    try std.testing.expectEqual(@as(?u8, 'o'), buf.charAt(4));
+    try std.testing.expectEqual(@as(?u8, null), buf.charAt(5)); // Out of bounds
+}
+
+test "GapBuffer.moveCursor changes cursor position" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "hello");
+    defer buf.deinit();
+
+    // After initWithText, cursor is at end of text
+    try std.testing.expectEqual(@as(usize, 5), buf.cursor());
+
+    buf.moveCursor(0);
+    try std.testing.expectEqual(@as(usize, 0), buf.cursor());
+
+    buf.moveCursor(3);
+    try std.testing.expectEqual(@as(usize, 3), buf.cursor());
+
+    buf.moveCursor(100); // Beyond end should clamp
+    try std.testing.expectEqual(@as(usize, 5), buf.cursor());
+}
+
+test "GapBuffer.lineCount counts lines correctly" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "line1\nline2\nline3");
+    defer buf.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), buf.lineCount());
+}
+
+test "GapBuffer.getLine returns correct line range" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "abc\ndef\nghi");
+    defer buf.deinit();
+
+    const line0 = buf.getLine(0);
+    try std.testing.expect(line0 != null);
+    try std.testing.expectEqual(@as(usize, 0), line0.?.start);
+    try std.testing.expectEqual(@as(usize, 3), line0.?.end);
+
+    const line1 = buf.getLine(1);
+    try std.testing.expect(line1 != null);
+    try std.testing.expectEqual(@as(usize, 4), line1.?.start);
+    try std.testing.expectEqual(@as(usize, 7), line1.?.end);
+}
+
+test "GapBuffer.clear resets buffer" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "hello world");
+    defer buf.deinit();
+
+    buf.clear();
+
+    try std.testing.expectEqual(@as(usize, 0), buf.len());
+    try std.testing.expectEqual(@as(usize, 1), buf.lineCount());
+}
+
+test "GapBuffer insert in middle of text" {
+    var buf = try GapBuffer.initWithText(std.testing.allocator, "hllo");
+    defer buf.deinit();
+
+    buf.moveCursor(1);
+    try buf.insert('e');
+
+    try std.testing.expectEqual(@as(usize, 5), buf.len());
+    try std.testing.expectEqual(@as(?u8, 'h'), buf.charAt(0));
+    try std.testing.expectEqual(@as(?u8, 'e'), buf.charAt(1));
+    try std.testing.expectEqual(@as(?u8, 'l'), buf.charAt(2));
+}
+
+test "GapBuffer multiple operations" {
+    var buf = try GapBuffer.init(std.testing.allocator);
+    defer buf.deinit();
+
+    // Insert "hello"
+    try buf.insertSlice("hello");
+    try std.testing.expectEqual(@as(usize, 5), buf.len());
+
+    // Move to position 5 and add " world"
+    try buf.insertSlice(" world");
+    try std.testing.expectEqual(@as(usize, 11), buf.len());
+
+    // Delete last character
+    buf.deleteBack();
+    try std.testing.expectEqual(@as(usize, 10), buf.len());
+}
+
+test "GapBuffer empty buffer operations" {
+    var buf = try GapBuffer.init(std.testing.allocator);
+    defer buf.deinit();
+
+    // Operations on empty buffer should not crash
+    buf.deleteBack();
+    buf.deleteForward();
+    try std.testing.expectEqual(@as(?u8, null), buf.charAt(0));
+    try std.testing.expectEqual(@as(usize, 0), buf.len());
+}

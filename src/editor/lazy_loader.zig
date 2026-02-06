@@ -148,3 +148,90 @@ pub const LazyLoader = struct {
         return @as(f32, @floatFromInt(self.bytes_loaded)) / @as(f32, @floatFromInt(self.total_size));
     }
 };
+
+// ============================================================================
+// Unit Tests
+// ============================================================================
+
+test "LazyLoader.init creates idle loader" {
+    var loader = LazyLoader.init();
+    defer loader.deinit();
+
+    try std.testing.expectEqual(LazyLoader.State.idle, loader.state);
+    try std.testing.expectEqual(@as(usize, 0), loader.bytes_loaded);
+    try std.testing.expectEqual(@as(usize, 0), loader.total_size);
+    try std.testing.expect(loader.file == null);
+}
+
+test "LazyLoader.isComplete returns correct state" {
+    var loader = LazyLoader.init();
+
+    try std.testing.expectEqual(false, loader.isComplete());
+
+    loader.state = .complete;
+    try std.testing.expectEqual(true, loader.isComplete());
+}
+
+test "LazyLoader.isPartial returns correct state" {
+    var loader = LazyLoader.init();
+
+    try std.testing.expectEqual(false, loader.isPartial());
+
+    loader.state = .partial;
+    try std.testing.expectEqual(true, loader.isPartial());
+}
+
+test "LazyLoader.getProgress returns 1.0 for zero total_size" {
+    var loader = LazyLoader.init();
+    loader.total_size = 0;
+    loader.bytes_loaded = 0;
+
+    try std.testing.expectEqual(@as(f32, 1.0), loader.getProgress());
+}
+
+test "LazyLoader.getProgress calculates correctly" {
+    var loader = LazyLoader.init();
+    loader.total_size = 100;
+    loader.bytes_loaded = 50;
+
+    try std.testing.expectEqual(@as(f32, 0.5), loader.getProgress());
+
+    loader.bytes_loaded = 100;
+    try std.testing.expectEqual(@as(f32, 1.0), loader.getProgress());
+}
+
+test "LazyLoader.deinit is safe to call multiple times" {
+    var loader = LazyLoader.init();
+
+    // Multiple deinit calls should not crash
+    loader.deinit();
+    loader.deinit();
+    loader.deinit();
+
+    try std.testing.expect(loader.file == null);
+}
+
+test "LazyLoader.continueLoad returns false when idle" {
+    var loader = LazyLoader.init();
+    var buffer = try GapBuffer.init(std.testing.allocator);
+    defer buffer.deinit();
+
+    // Should return false when in idle state
+    try std.testing.expectEqual(false, loader.continueLoad(&buffer));
+}
+
+test "LazyLoader.continueLoad returns false when complete" {
+    var loader = LazyLoader.init();
+    loader.state = .complete;
+    var buffer = try GapBuffer.init(std.testing.allocator);
+    defer buffer.deinit();
+
+    // Should return false when already complete
+    try std.testing.expectEqual(false, loader.continueLoad(&buffer));
+}
+
+test "LazyLoader constants are correct" {
+    // Verify constants match expected values
+    try std.testing.expectEqual(@as(usize, 64 * 1024), LazyLoader.INITIAL_BYTES);
+    try std.testing.expectEqual(@as(usize, 16 * 1024), LazyLoader.CHUNK_BYTES);
+}

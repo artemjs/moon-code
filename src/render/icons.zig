@@ -111,13 +111,13 @@ fn getIconTexture(gpu: *GpuRenderer, icon: IconType, size: u32) ?u32 {
 
 /// Load SVG and create texture
 fn loadAndRasterizeSvg(gpu: *GpuRenderer, icon: IconType, size: u32) ?u32 {
-    const path = getIconPath(icon);
+    const filename = getIconFilename(icon);
 
-    // Create null-terminated string
-    var path_buf: [256:0]u8 = undefined;
-    if (path.len >= path_buf.len) return null;
-    @memcpy(path_buf[0..path.len], path);
-    path_buf[path.len] = 0;
+    // Build path: ~/.mncode/icons/{filename}
+    var path_buf: [512:0]u8 = undefined;
+    const home = std.posix.getenv("HOME") orelse "/tmp";
+    const path_len = std.fmt.bufPrint(&path_buf, "{s}/.mncode/icons/{s}", .{ home, filename }) catch return null;
+    path_buf[path_len.len] = 0;
 
     // Load SVG
     const nsvg = c.nsvgParseFromFile(@ptrCast(&path_buf), "px", 96.0);
@@ -156,43 +156,43 @@ fn loadAndRasterizeSvg(gpu: *GpuRenderer, icon: IconType, size: u32) ?u32 {
     return gpu.createTextureFromRGBA(data, size, size);
 }
 
-/// Paths to SVG files
-fn getIconPath(icon: IconType) []const u8 {
+/// SVG filenames (stored in ~/.mncode/icons/)
+fn getIconFilename(icon: IconType) []const u8 {
     return switch (icon) {
-        .files => "assets/icons/files.svg",
-        .search => "assets/icons/search.svg",
-        .git => "assets/icons/git-branch.svg",
-        .file => "assets/icons/file-code.svg",
-        .folder_open => "assets/icons/folder.svg",
-        .file_cpp => "assets/icons/cpp.svg",
-        .file_hpp => "assets/icons/h.svg",
-        .file_h => "assets/icons/h.svg",
-        .file_c => "assets/icons/c.svg",
-        .file_zig => "assets/icons/zig.svg",
-        .file_meta => "assets/icons/file-code.svg",
-        .file_json => "assets/icons/json.svg",
-        .file_yaml => "assets/icons/yaml.svg",
-        .file_js => "assets/icons/js.svg",
-        .file_ts => "assets/icons/ts.svg",
-        .file_py => "assets/icons/py.svg",
-        .file_rs => "assets/icons/rs.svg",
-        .file_go => "assets/icons/go.svg",
-        .file_md => "assets/icons/md.svg",
-        .file_txt => "assets/icons/txt.svg",
-        .file_xml => "assets/icons/xml.svg",
-        .file_html => "assets/icons/html.svg",
-        .file_css => "assets/icons/css.svg",
-        .close => "assets/icons/close.svg",
-        .plus => "assets/icons/plus.svg",
-        .window_minimize => "assets/icons/window-minimize.svg",
-        .window_maximize => "assets/icons/window-maximize.svg",
-        .window_restore => "assets/icons/window-restore.svg",
-        .window_close => "assets/icons/window-close.svg",
-        .plugin => "assets/icons/plugin.svg",
-        .play => "assets/icons/play.svg",
-        .terminal => "assets/icons/terminal.svg",
-        .error_icon => "assets/icons/error.svg",
-        .warning_icon => "assets/icons/warning.svg",
+        .files => "files.svg",
+        .search => "search.svg",
+        .git => "git-branch.svg",
+        .file => "file-code.svg",
+        .folder_open => "folder.svg",
+        .file_cpp => "cpp.svg",
+        .file_hpp => "h.svg",
+        .file_h => "h.svg",
+        .file_c => "c.svg",
+        .file_zig => "zig.svg",
+        .file_meta => "file-code.svg",
+        .file_json => "json.svg",
+        .file_yaml => "yaml.svg",
+        .file_js => "js.svg",
+        .file_ts => "ts.svg",
+        .file_py => "py.svg",
+        .file_rs => "rs.svg",
+        .file_go => "go.svg",
+        .file_md => "md.svg",
+        .file_txt => "txt.svg",
+        .file_xml => "xml.svg",
+        .file_html => "html.svg",
+        .file_css => "css.svg",
+        .close => "close.svg",
+        .plus => "plus.svg",
+        .window_minimize => "window-minimize.svg",
+        .window_maximize => "window-maximize.svg",
+        .window_restore => "window-restore.svg",
+        .window_close => "window-close.svg",
+        .plugin => "plugin.svg",
+        .play => "play.svg",
+        .terminal => "terminal.svg",
+        .error_icon => "error.svg",
+        .warning_icon => "warning.svg",
     };
 }
 
