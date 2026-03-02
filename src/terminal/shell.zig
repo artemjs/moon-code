@@ -130,10 +130,8 @@ pub const Shell = struct {
 
     /// Get previous command from history
     pub fn historyPrev(self: *Self) ?[]const u8 {
-        if (self.history_count == 0) return null;
-        if (self.history_pos > 0) {
-            self.history_pos -= 1;
-        }
+        if (self.history_count == 0 or self.history_pos == 0) return null;
+        self.history_pos -= 1;
         return self.history[self.history_pos][0..self.history_lens[self.history_pos]];
     }
 
@@ -191,7 +189,8 @@ pub const Shell = struct {
     }
 
     /// Get output lines for display (with scroll support)
-    pub fn getLines(self: *Self, lines: *[64][]const u8, max_lines: usize) usize {
+    /// Copies line data into caller-owned buffers to avoid data races with reader thread.
+    pub fn getLines(self: *Self, line_bufs: *[64][256]u8, line_lens: *[64]usize, max_lines: usize) usize {
         self.output_mutex.lock();
         defer self.output_mutex.unlock();
 
@@ -223,7 +222,7 @@ pub const Shell = struct {
         const end_line = if (line_count > self.scroll_offset) line_count - self.scroll_offset else 0;
         const start_line = if (end_line > max_lines) end_line - max_lines else 0;
 
-        // Return lines in range
+        // Copy lines into caller-owned buffers (safe after mutex release)
         var i = start_line;
         while (i < end_line and count < max_lines) : (i += 1) {
             if (i >= line_count) break;
@@ -233,7 +232,9 @@ pub const Shell = struct {
             var le = ls;
             while (le < out.len and out[le] != '\n') : (le += 1) {}
 
-            lines[count] = out[ls..le];
+            const copy_len = @min(le - ls, 256);
+            @memcpy(line_bufs[count][0..copy_len], out[ls .. ls + copy_len]);
+            line_lens[count] = copy_len;
             count += 1;
         }
 
@@ -349,8 +350,9 @@ test "Shell scrolling logic" {
     var sh = Shell.init();
 
     // Setup many lines
-    @memcpy(sh.output[0..30], "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n");
-    sh.output_len = 30;
+    const test_data = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n";
+    @memcpy(sh.output[0..test_data.len], test_data);
+    sh.output_len = test_data.len;
     sh.updateLineCount();
 
     try std.testing.expectEqual(@as(usize, 15), sh.total_lines);

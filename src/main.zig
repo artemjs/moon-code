@@ -399,6 +399,7 @@ var g_terminal_focused: bool = false;
 var g_terminal_key_repeat: text_input.KeyRepeatState = .{};
 var g_terminal_scroll_y: i32 = 0; // Scroll position for terminal
 var g_terminal_max_scroll: i32 = 0; // Max scroll value
+var g_terminal_scrollbar: widgets.Scrollbar = widgets.Scrollbar.init(0, 0, 100, true);
 var g_run_btn_hovered: bool = false;
 var g_panel_btn_hovered: bool = false;
 var g_output_lines: [256][256]u8 = undefined;
@@ -6009,23 +6010,27 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
                 gpu.fillRoundedRect(content_x - 4, content_y - 4, output_w + 8, @intCast(output_area_h + 8), 6, 0xFF151515);
 
                 // Draw terminal output with scroll support
-                var term_lines: [64][]const u8 = undefined;
-                const line_count = term.getLines(&term_lines, @min(max_lines, 64));
+                // Lines are copied into local buffers to avoid data races with reader thread
+                var term_line_bufs: [64][256]u8 = undefined;
+                var term_line_lens: [64]usize = undefined;
+                const line_count = term.getLines(&term_line_bufs, &term_line_lens, @min(max_lines, 64));
 
                 var term_y: i32 = content_y;
-                for (term_lines[0..line_count]) |line| {
-                    if (line.len > 0) {
-                        const display_len = @min(line.len, 200);
+                for (0..line_count) |li| {
+                    const line_len = term_line_lens[li];
+                    if (line_len > 0) {
+                        const display_len = @min(line_len, 200);
+                        const line_text = term_line_bufs[li][0..display_len];
                         // Parse color hints from output
-                        const line_color: u32 = if (std.mem.indexOf(u8, line[0..display_len], "error") != null)
+                        const line_color: u32 = if (std.mem.indexOf(u8, line_text, "error") != null)
                             0xFFff6b6b
-                        else if (std.mem.indexOf(u8, line[0..display_len], "warning") != null or std.mem.indexOf(u8, line[0..display_len], "warn") != null)
+                        else if (std.mem.indexOf(u8, line_text, "warning") != null or std.mem.indexOf(u8, line_text, "warn") != null)
                             0xFFcca700
-                        else if (std.mem.indexOf(u8, line[0..display_len], "success") != null or std.mem.indexOf(u8, line[0..display_len], "ok") != null)
+                        else if (std.mem.indexOf(u8, line_text, "success") != null or std.mem.indexOf(u8, line_text, "ok") != null)
                             0xFF6bff6b
                         else
                             COLOR_TEXT;
-                        gpu.drawUIText(line[0..display_len], content_x, term_y, line_color);
+                        gpu.drawUIText(line_text, content_x, term_y, line_color);
                     }
                     term_y += 18;
                 }
@@ -6074,10 +6079,10 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
                     gpu.drawUIText("Type command... (↑↓ history, PgUp/PgDn scroll)", content_x + 18, input_y + 6, COLOR_TEXT_DIM);
                 }
 
-                // Cursor (blinking effect via time)
+                // Cursor (matching editor style)
                 if (g_terminal_focused) {
                     const cursor_x: i32 = content_x + 18 + @as(i32, @intCast(g_terminal_field.cursor * 8));
-                    gpu.fillRect(cursor_x, input_y + 6, 2, 16, COLOR_CURSOR);
+                    gpu.fillRoundedRect(cursor_x, input_y + 4, 2, 20, 1, COLOR_CURSOR);
                 }
 
                 // Scroll indicator if scrolled up
