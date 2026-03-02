@@ -286,13 +286,19 @@ pub const LspClient = struct {
 
         if (conn.state == .ready) {
             // Send shutdown request
-            self.sendShutdown(conn) catch {};
+            self.sendShutdown(conn) catch |e| {
+                std.debug.print("LSP shutdown failed: {}\n", .{e});
+            };
         }
 
         // Kill process
         if (conn.process) |*proc| {
-            _ = proc.kill() catch {};
-            _ = proc.wait() catch {};
+            _ = proc.kill() catch |e| {
+                std.debug.print("Failed to kill LSP process: {}\n", .{e});
+            };
+            _ = proc.wait() catch |e| {
+                std.debug.print("Failed to wait for LSP process: {}\n", .{e});
+            };
         }
 
         conn.process = null;
@@ -596,7 +602,9 @@ pub const LspClient = struct {
                 (conn.state == .initializing and std.mem.indexOf(u8, json, "\"capabilities\"") != null))
             {
                 // Initialize response - send initialized notification
-                self.sendInitialized(conn) catch {};
+                self.sendInitialized(conn) catch |e| {
+                    std.debug.print("LSP initialized notification failed: {}\n", .{e});
+                };
                 return;
             }
 

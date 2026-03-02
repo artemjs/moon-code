@@ -11,7 +11,7 @@
 - [x] Create src/editor/cache.zig - BufferCache with CursorCache, LineIndex, DirtyTracking, TokenCache (8 tests)
 
 ## Pending
-- [ ] Replace 50+ catch {} with proper error handling (see files below)
+- [x] Replace 50+ catch {} with proper error handling (see files below)
 - [ ] Add auto-save functionality (use TabManager.shouldAutoSave)
 - [ ] Add LSP retry logic (src/lsp/client.zig)
 
@@ -41,7 +41,8 @@
 | ui/state.zig | 9 | ✅ Passing |
 | editor/tab_manager.zig | 12 | ✅ Passing |
 | editor/cache.zig | 8 | ✅ Passing |
-| **Total** | **58** | ✅ All Passing |
+| terminal/shell.zig | 4 | ✅ Passing |
+| **Total** | **62** | ✅ All Passing |
 
 ## New Files Created
 ```

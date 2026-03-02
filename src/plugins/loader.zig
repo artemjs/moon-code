@@ -1,5 +1,6 @@
 const std = @import("std");
 const wasm = @import("wasm_runtime.zig");
+const logger = @import("../core/logger.zig");
 
 /// Plugin metadata loaded from WASM export
 pub const PluginInfo = struct {
@@ -623,7 +624,11 @@ fn ensureConfigDir() void {
     var buf: [512]u8 = undefined;
     const home = std.posix.getenv("HOME") orelse return;
     const config_path = std.fmt.bufPrint(&buf, "{s}/.mncode/config", .{home}) catch return;
-    std.fs.makeDirAbsolute(config_path) catch {};
+    std.fs.makeDirAbsolute(config_path) catch |e| {
+        if (e != error.PathAlreadyExists) {
+            logger.warn("Failed to create config directory {s}: {}", .{ config_path, e });
+        }
+    };
 }
 
 /// Check if plugin is disabled
@@ -669,13 +674,13 @@ pub fn disablePlugin(plugin_name: []const u8) !void {
     defer file.close();
 
     if (existing_len > 0) {
-        _ = file.write(existing[0..existing_len]) catch {};
+        _ = file.write(existing[0..existing_len]) catch |e| logger.err("Failed to write to disabled config: {}", .{e});
         if (existing[existing_len - 1] != '\n') {
-            _ = file.write("\n") catch {};
+            _ = file.write("\n") catch |e| logger.err("Failed to write to disabled config: {}", .{e});
         }
     }
-    _ = file.write(plugin_name) catch {};
-    _ = file.write("\n") catch {};
+    _ = file.write(plugin_name) catch |e| logger.err("Failed to write to disabled config: {}", .{e});
+    _ = file.write("\n") catch |e| logger.err("Failed to write to disabled config: {}", .{e});
 }
 
 /// Enable plugin (remove from disabled.conf)
@@ -697,8 +702,8 @@ pub fn enablePlugin(plugin_name: []const u8) !void {
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len > 0 and !std.mem.eql(u8, trimmed, plugin_name)) {
-            _ = out_file.write(trimmed) catch {};
-            _ = out_file.write("\n") catch {};
+            _ = out_file.write(trimmed) catch |e| logger.err("Failed to update disabled config: {}", .{e});
+            _ = out_file.write("\n") catch |e| logger.err("Failed to update disabled config: {}", .{e});
         }
     }
 }
@@ -716,7 +721,11 @@ pub fn uninstallPlugin(plugin_path: []const u8) !void {
     // Create trash directory
     var trash_buf: [512]u8 = undefined;
     const trash_dir = std.fmt.bufPrint(&trash_buf, "{s}/.local/share/Trash/files", .{home}) catch return error.PathTooLong;
-    std.fs.makeDirAbsolute(trash_dir) catch {};
+    std.fs.makeDirAbsolute(trash_dir) catch |e| {
+        if (e != error.PathAlreadyExists) {
+            logger.warn("Failed to create trash directory {s}: {}", .{ trash_dir, e });
+        }
+    };
 
     // Move file to trash
     var dest_buf: [1024]u8 = undefined;

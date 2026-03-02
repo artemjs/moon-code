@@ -199,6 +199,16 @@ pub fn build(b: *std.Build) void {
     });
     const run_cache_tests = b.addRunArtifact(cache_tests);
 
+    // Test for terminal/shell.zig
+    const shell_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/terminal/shell.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_shell_tests = b.addRunArtifact(shell_tests);
+
     // Main test step
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_logger_tests.step);
@@ -208,4 +218,5 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_ui_state_tests.step);
     test_step.dependOn(&run_tab_manager_tests.step);
     test_step.dependOn(&run_cache_tests.step);
+    test_step.dependOn(&run_shell_tests.step);
 }

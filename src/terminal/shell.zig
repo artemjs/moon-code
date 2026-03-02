@@ -99,7 +99,9 @@ pub const Shell = struct {
         if (!self.running or self.child == null) return;
 
         if (self.child.?.stdin) |stdin| {
-            _ = stdin.write(data) catch {};
+            _ = stdin.write(data) catch |e| {
+                std.debug.print("Failed to write to shell stdin: {}\n", .{e});
+            };
         }
     }
 
@@ -261,9 +263,13 @@ pub const Shell = struct {
         if (self.child) |*child_ptr| {
             // Send exit
             if (child_ptr.stdin) |stdin| {
-                _ = stdin.write("exit\n") catch {};
+                _ = stdin.write("exit\n") catch |e| {
+                    std.debug.print("Failed to send exit command to shell: {}\n", .{e});
+                };
             }
-            _ = child_ptr.wait() catch {};
+            _ = child_ptr.wait() catch |e| {
+                std.debug.print("Failed to wait for shell process: {}\n", .{e});
+            };
         }
 
         if (self.stdout_thread) |thread| {
@@ -297,4 +303,67 @@ pub fn stopShell() void {
     if (g_shell) |*sh| {
         sh.stop();
     }
+}
+
+// ============================================================================
+// Unit Tests
+// ============================================================================
+
+test "Shell initialization" {
+    const sh = Shell.init();
+    try std.testing.expectEqual(false, sh.isRunning());
+    try std.testing.expectEqual(@as(usize, 0), sh.output_len);
+    try std.testing.expectEqual(@as(usize, 0), sh.scroll_offset);
+}
+
+test "Shell history management" {
+    var sh = Shell.init();
+
+    // Add history
+    sh.sendLine("ls -l");
+    sh.sendLine("pwd");
+
+    try std.testing.expectEqual(@as(usize, 2), sh.history_count);
+
+    // Test history traversal
+    try std.testing.expectEqualStrings("pwd", sh.historyPrev().?);
+    try std.testing.expectEqualStrings("ls -l", sh.historyPrev().?);
+    try std.testing.expectEqual(null, sh.historyPrev());
+
+    try std.testing.expectEqualStrings("pwd", sh.historyNext().?);
+    try std.testing.expectEqual(null, sh.historyNext());
+}
+
+test "Shell output line counting" {
+    var sh = Shell.init();
+
+    // Manual output injection for testing
+    @memcpy(sh.output[0..13], "line1\nline2\n\n");
+    sh.output_len = 13;
+
+    sh.updateLineCount();
+    try std.testing.expectEqual(@as(usize, 3), sh.total_lines);
+}
+
+test "Shell scrolling logic" {
+    var sh = Shell.init();
+
+    // Setup many lines
+    @memcpy(sh.output[0..30], "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n");
+    sh.output_len = 30;
+    sh.updateLineCount();
+
+    try std.testing.expectEqual(@as(usize, 15), sh.total_lines);
+
+    // Scroll up
+    sh.scrollUp(2);
+    try std.testing.expectEqual(@as(usize, 2), sh.scroll_offset);
+
+    // Scroll down
+    sh.scrollDown(1);
+    try std.testing.expectEqual(@as(usize, 1), sh.scroll_offset);
+
+    // Scroll to bottom
+    sh.scrollToBottom();
+    try std.testing.expectEqual(@as(usize, 0), sh.scroll_offset);
 }
