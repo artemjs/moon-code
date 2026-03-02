@@ -514,12 +514,18 @@ fn detectOutputLineType(line: []const u8) u8 {
 
 /// Search a single file for query matches
 fn searchFileForQuery(file_path: []const u8, query: []const u8) void {
-    const file = std.fs.openFileAbsolute(file_path, .{}) catch return;
+    const file = std.fs.openFileAbsolute(file_path, .{}) catch |e| {
+        logger.warn("Failed to open file for search {s}: {}", .{ file_path, e });
+        return;
+    };
     defer file.close();
 
     // Read file content (limit to 256KB)
     var buf: [256 * 1024]u8 = undefined;
-    const bytes_read = file.readAll(&buf) catch return;
+    const bytes_read = file.readAll(&buf) catch |e| {
+        logger.warn("Failed to read file for search {s}: {}", .{ file_path, e });
+        return;
+    };
     if (bytes_read == 0) return;
 
     const content = buf[0..bytes_read];
@@ -574,7 +580,10 @@ fn searchFileForQuery(file_path: []const u8, query: []const u8) void {
 fn searchDirectoryRecursive(dir_path: []const u8, query: []const u8, depth: u32) void {
     if (depth > 10 or g_search_result_count >= g_search_results.len) return;
 
-    var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch return;
+    var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch |e| {
+        logger.warn("Failed to open directory for search {s}: {}", .{ dir_path, e });
+        return;
+    };
     defer dir.close();
 
     var iter = dir.iterate();
@@ -696,33 +705,50 @@ fn saveSettings() void {
     var path_buf: [512]u8 = undefined;
     const path = getSettingsPath(&path_buf) orelse return;
 
-    const file = std.fs.createFileAbsolute(path, .{}) catch return;
+    const file = std.fs.createFileAbsolute(path, .{}) catch |e| {
+        logger.warn("Failed to create settings file {s}: {}", .{ path, e });
+        return;
+    };
     defer file.close();
 
     // Write settings
     const inertia_data = if (g_scroll_inertia) "scroll_inertia=1\n" else "scroll_inertia=0\n";
-    file.writeAll(inertia_data) catch |e| logger.warn("Operation failed: {}", .{e});
+    file.writeAll(inertia_data) catch |e| logger.warn("Failed to write inertia setting: {}", .{e});
 
     // Scroll speed
     var speed_buf: [32]u8 = undefined;
-    const speed_str = std.fmt.bufPrint(&speed_buf, "scroll_speed={d:.2}\n", .{g_scroll_speed}) catch return;
-    file.writeAll(speed_str) catch |e| logger.warn("Operation failed: {}", .{e});
+    const speed_str = std.fmt.bufPrint(&speed_buf, "scroll_speed={d:.2}\n", .{g_scroll_speed}) catch |e| {
+        logger.warn("Failed to format speed string: {}", .{e});
+        return;
+    };
+    file.writeAll(speed_str) catch |e| logger.warn("Failed to write speed setting: {}", .{e});
 
     // Line visibility
     var line_vis_buf: [32]u8 = undefined;
-    const line_vis_str = std.fmt.bufPrint(&line_vis_buf, "line_visibility={d:.2}\n", .{g_line_visibility}) catch return;
-    file.writeAll(line_vis_str) catch |e| logger.warn("Operation failed: {}", .{e});
+    const line_vis_str = std.fmt.bufPrint(&line_vis_buf, "line_visibility={d:.2}\n", .{g_line_visibility}) catch |e| {
+        logger.warn("Failed to format line visibility string: {}", .{e});
+        return;
+    };
+    file.writeAll(line_vis_str) catch |e| logger.warn("Failed to write line visibility setting: {}", .{e});
 }
 
 fn loadSettings() void {
     var path_buf: [512]u8 = undefined;
     const path = getSettingsPath(&path_buf) orelse return;
 
-    const file = std.fs.openFileAbsolute(path, .{}) catch return;
+    const file = std.fs.openFileAbsolute(path, .{}) catch |e| {
+        if (e != error.FileNotFound) {
+            logger.warn("Failed to open settings file {s}: {}", .{ path, e });
+        }
+        return;
+    };
     defer file.close();
 
     var buf: [512]u8 = undefined;
-    const bytes_read = file.readAll(&buf) catch return;
+    const bytes_read = file.readAll(&buf) catch |e| {
+        logger.warn("Failed to read settings file {s}: {}", .{ path, e });
+        return;
+    };
     const content = buf[0..bytes_read];
 
     // Parse scroll_inertia
@@ -1554,6 +1580,16 @@ pub fn main() !void {
                 const new_scroll = ui.drag_start_scroll + @divTrunc(delta * scroll_per_pixel, 100);
                 scroll_x = @max(0, @min(max_scroll_x, new_scroll));
                 needs_redraw = true;
+            } else if (g_bottom_panel_tab == 2 and g_terminal_scrollbar.dragging) {
+                if (g_terminal_scrollbar.update(wayland.mouse_x, wayland.mouse_y, wayland.mouse_pressed)) {
+                    const scroll_pos = g_terminal_scrollbar.getScrollPosition();
+                    const term = shell.getShell();
+                    const scroll_info = term.getScrollInfo();
+                    const scroll_range = if (scroll_info.total > scroll_info.visible) scroll_info.total - scroll_info.visible else 0;
+                    // Invert because scroll_offset 0 = bottom
+                    term.scroll_offset = @intFromFloat(@as(f32, @floatFromInt(scroll_range)) * (1.0 - scroll_pos));
+                    needs_redraw = true;
+                }
             } else if (ui.dragging_sidebar) {
                 // Resize sidebar (mouse_x + 6 to account for padding)
                 ui.sidebar_width = @max(100, @min(500, wayland.mouse_x + 6));
@@ -3216,7 +3252,17 @@ pub fn main() !void {
                                 } else {
                                     // Tab clicks
                                     const bp_tab_y_click: i32 = bp_y + 10;
-                                    if (event.y >= bp_tab_y_click and event.y < bp_tab_y_click + 26) {
+
+                                    // Check terminal scrollbar interaction
+                                    if (g_bottom_panel_tab == 2 and g_terminal_scrollbar.update(event.x, event.y, true)) {
+                                        const scroll_pos = g_terminal_scrollbar.getScrollPosition();
+                                        const term = shell.getShell();
+                                        const scroll_info = term.getScrollInfo();
+                                        const scroll_range = if (scroll_info.total > scroll_info.visible) scroll_info.total - scroll_info.visible else 0;
+                                        // Invert because scroll_offset 0 = bottom
+                                        term.scroll_offset = @intFromFloat(@as(f32, @floatFromInt(scroll_range)) * (1.0 - scroll_pos));
+                                        needs_redraw = true;
+                                    } else if (event.y >= bp_tab_y_click and event.y < bp_tab_y_click + 26) {
                                         // Output tab
                                         if (event.x >= click_editor_left + 12 and event.x < click_editor_left + 82) {
                                             g_bottom_panel_tab = 0;
@@ -3368,6 +3414,9 @@ pub fn main() !void {
                     ui.dragging_sidebar = false;
                     ui.dragging_bottom_panel = false;
                     ui.dragging_tab_bar = false;
+                    if (g_bottom_panel_tab == 2) {
+                        _ = g_terminal_scrollbar.update(event.x, event.y, false);
+                    }
                     if (selection.dragging) {
                         selection.dragging = false;
                         // If anchor == cursor, just click without movement - remove selection
@@ -5991,19 +6040,16 @@ fn render(gpu: *GpuRenderer, text_buffer: *const GapBuffer, wayland: *const Wayl
                     const scrollbar_x: i32 = content_x + @as(i32, @intCast(output_w)) + 4;
                     const scrollbar_h: u32 = @intCast(output_area_h);
 
-                    // Track
-                    gpu.fillRoundedRect(scrollbar_x, content_y - 4, scrollbar_w, scrollbar_h, 4, 0xFF1a1a1a);
+                    // Update scrollbar state
+                    g_terminal_scrollbar.rect = .{ .x = scrollbar_x, .y = content_y - 4, .w = scrollbar_w, .h = scrollbar_h };
+                    g_terminal_scrollbar.setContentRatio(@floatFromInt(visible_lines), @floatFromInt(total_lines));
 
-                    // Thumb
-                    const visible_ratio = @as(f32, @floatFromInt(visible_lines)) / @as(f32, @floatFromInt(total_lines));
-                    const thumb_h: u32 = @max(20, @as(u32, @intFromFloat(@as(f32, @floatFromInt(scrollbar_h)) * visible_ratio)));
                     const scroll_range = total_lines - visible_lines;
                     const scroll_ratio: f32 = if (scroll_range > 0) @as(f32, @floatFromInt(scroll_offset)) / @as(f32, @floatFromInt(scroll_range)) else 0;
                     // Invert because scroll_offset 0 = bottom (show latest)
-                    const thumb_y_offset: i32 = @intFromFloat(@as(f32, @floatFromInt(scrollbar_h - thumb_h)) * (1.0 - scroll_ratio));
-                    const thumb_y: i32 = content_y - 4 + thumb_y_offset;
+                    g_terminal_scrollbar.setPosition(1.0 - scroll_ratio);
 
-                    gpu.fillRoundedRect(scrollbar_x + 2, thumb_y, scrollbar_w - 4, thumb_h, 3, 0xFF505050);
+                    g_terminal_scrollbar.draw(gpu);
                 }
 
                 // Input field at bottom (improved style)

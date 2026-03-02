@@ -6,7 +6,7 @@
 - [x] SVG not rendering correctly - FIXED: icons now load from ~/.mncode/icons/
 
 ### Terminal
-- [ ] No scrollbar in terminal panel - can't scroll through long output
+- [x] No scrollbar in terminal panel - FIXED: added interactive scrollbar
 
 ## Architecture Issues
 
@@ -18,7 +18,7 @@
 ### Code Structure
 - [ ] main.zig is 7345 lines - needs splitting into modules
 - [ ] 80+ global variables - need encapsulation
-- [ ] 50+ `catch {}` - errors silently ignored
+- [x] 50+ `catch {}` - FIXED: replaced silent errors with proper logging
 
 ## Performance Notes
 - Token cache limited to 10000 lines

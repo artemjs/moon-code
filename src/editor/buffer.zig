@@ -195,13 +195,17 @@ pub const GapBuffer = struct {
 
         // Build line index (scan for newlines)
         self.line_starts.clearRetainingCapacity();
-        self.line_starts.append(self.allocator, 0) catch {};
+        self.line_starts.append(self.allocator, 0) catch |e| {
+            std.debug.print("Failed to append to line_starts: {}\n", .{e});
+        };
 
         var line_count: usize = 1;
         for (self.original, 0..) |ch, i| {
             if (ch == '\n') {
                 line_count += 1;
-                self.line_starts.append(self.allocator, i + 1) catch {};
+                self.line_starts.append(self.allocator, i + 1) catch |e| {
+                    std.debug.print("Failed to append to line_starts: {}\n", .{e});
+                };
             }
         }
 
@@ -227,7 +231,9 @@ pub const GapBuffer = struct {
         self.cached_max_line_len = 0;
         self.cache_valid = true;
         self.line_starts.clearRetainingCapacity();
-        self.line_starts.append(self.allocator, 0) catch {};
+        self.line_starts.append(self.allocator, 0) catch |e| {
+            std.debug.print("Failed to append to line_starts: {}\n", .{e});
+        };
         self.line_cache_valid = true;
         self.invalidateTextCache();
     }
@@ -373,7 +379,9 @@ pub const GapBuffer = struct {
             if (ch == '\n') {
                 newlines += 1;
                 // Add line start position (position after newline)
-                self.line_starts.append(self.allocator, base_offset + i + 1) catch {};
+                self.line_starts.append(self.allocator, base_offset + i + 1) catch |e| {
+                    std.debug.print("Failed to append to line_starts: {}\n", .{e});
+                };
             }
         }
 
@@ -879,7 +887,9 @@ pub const GapBuffer = struct {
                         .length = piece.length - offset - delete_in_piece,
                     };
                     piece.length = offset;
-                    self.pieces.insert(self.allocator, piece_idx + 1, right) catch {};
+                    self.pieces.insert(self.allocator, piece_idx + 1, right) catch |e| {
+                        std.debug.print("Failed to insert piece: {}\n", .{e});
+                    };
                     self.cached_len -= delete_in_piece;
                     remaining -= delete_in_piece;
                 }
